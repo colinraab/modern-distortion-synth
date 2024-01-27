@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="E4qNY4" name="Capstone" projectType="audioplug" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1"
+              companyName="Colin Raab" pluginCharacteristicsValue="pluginIsSynth,pluginWantsMidiIn"
+              defines="JUCE_MODAL_LOOPS_PERMITTED=1">
+  <MAINGROUP id="gy3r1h" name="Capstone">
+    <GROUP id="{507450A8-0CF4-389C-CFB6-32DBC8BF804F}" name="Misc">
+      <FILE id="ahTbxE" name="AuxParam.h" compile="0" resource="0" file="AuxParam.h"/>
+      <FILE id="bniwSw" name="Biquad.h" compile="0" resource="0" file="Biquad.h"/>
+      <FILE id="KN23Y9" name="Distortion.h" compile="0" resource="0" file="Distortion.h"/>
+      <FILE id="XBFpMh" name="Conversions.h" compile="0" resource="0" file="Conversions.h"/>
+    </GROUP>
+    <GROUP id="{68DCD39A-B661-9512-BD2D-12419A2F5640}" name="Presets">
+      <FILE id="zVpyJm" name="ParameterHelper.h" compile="0" resource="0"
+            file="Presets/ParameterHelper.h"/>
+      <FILE id="HHlMDb" name="PresetManager.cpp" compile="1" resource="0"
+            file="Presets/PresetManager.cpp"/>
+      <FILE id="IjwQ26" name="PresetManager.h" compile="0" resource="0" file="Presets/PresetManager.h"/>
+      <FILE id="dGXGue" name="PresetPanel.h" compile="0" resource="0" file="Presets/PresetPanel.h"/>
+    </GROUP>
+    <GROUP id="{CAB674BE-28BA-1B60-50EA-6D38AD3B464F}" name="AuxShaper">
+      <FILE id="ckjefx" name="AuxBezier.cpp" compile="1" resource="0" file="AuxShaper/AuxBezier.cpp"/>
+      <FILE id="VYlFwP" name="AuxBezier.h" compile="0" resource="0" file="AuxShaper/AuxBezier.h"/>
+      <FILE id="a9w4SB" name="AuxFilter.cpp" compile="1" resource="0" file="AuxShaper/AuxFilter.cpp"/>
+      <FILE id="Xh6Cw6" name="AuxFilter.h" compile="0" resource="0" file="AuxShaper/AuxFilter.h"/>
+      <FILE id="phDki5" name="AuxSearch.cpp" compile="1" resource="0" file="AuxShaper/AuxSearch.cpp"/>
+      <FILE id="GPUWJm" name="AuxSearch.h" compile="0" resource="0" file="AuxShaper/AuxSearch.h"/>
+      <FILE id="ClmfMF" name="AuxShaper.cpp" compile="1" resource="0" file="AuxShaper/AuxShaper.cpp"/>
+      <FILE id="Sb44SV" name="AuxShaper.h" compile="0" resource="0" file="AuxShaper/AuxShaper.h"/>
+      <FILE id="NjCnIu" name="AuxWaveShape.cpp" compile="1" resource="0"
+            file="AuxShaper/AuxWaveShape.cpp"/>
+      <FILE id="cWZcso" name="AuxWaveShape.h" compile="0" resource="0" file="AuxShaper/AuxWaveShape.h"/>
+    </GROUP>
+    <GROUP id="{F22752F1-FF10-8D14-4278-7828121A809F}" name="UI">
+      <GROUP id="{D4CE3935-3730-C66B-7A69-84FCF30C185D}" name="Assets">
+        <FILE id="D8Y5Yf" name="Avenir_Regular.ttf" compile="0" resource="1"
+              file="UI/Assets/Avenir_Regular.ttf"/>
+        <FILE id="I4Ngcl" name="background.png" compile="0" resource="1" file="UI/Assets/background.png"/>
+        <FILE id="fwcpFg" name="black_knob.png" compile="0" resource="1" file="UI/Assets/black_knob.png"/>
+        <FILE id="nb0F4a" name="del_button.png" compile="0" resource="1" file="UI/Assets/del_button.png"/>
+        <FILE id="oVonOB" name="EHSMB.TTF" compile="0" resource="1" file="UI/Assets/EHSMB.TTF"/>
+        <FILE id="iYmmRz" name="init_button.png" compile="0" resource="1" file="UI/Assets/init_button.png"/>
+        <FILE id="kwtnE0" name="left_button.png" compile="0" resource="1" file="UI/Assets/left_button.png"/>
+        <FILE id="TcAAUb" name="mainview.png" compile="0" resource="1" file="UI/Assets/mainview.png"/>
+        <FILE id="rheP7C" name="rand_button.png" compile="0" resource="1" file="UI/Assets/rand_button.png"/>
+        <FILE id="zgFoTa" name="right_button.png" compile="0" resource="1"
+              file="UI/Assets/right_button.png"/>
+        <FILE id="ls3xL4" name="save_button.png" compile="0" resource="1" file="UI/Assets/save_button.png"/>
+        <FILE id="OWKHpV" name="silver_knob.png" compile="0" resource="1" file="UI/Assets/silver_knob.png"/>
+        <FILE id="q5EeWS" name="slider.png" compile="0" resource="1" file="UI/Assets/slider.png"/>
+        <FILE id="OZAoqF" name="VU.png" compile="0" resource="1" file="UI/Assets/VU.png"/>
+      </GROUP>
+      <FILE id="TyxzV8" name="GainMeter.h" compile="0" resource="0" file="GainMeter.h"/>
+      <FILE id="D6EIEc" name="Oscilloscope.h" compile="0" resource="0" file="UI/Oscilloscope.h"/>
+      <FILE id="VNMZmL" name="TabPages.h" compile="0" resource="0" file="UI/TabPages.h"/>
+      <FILE id="OghJ9W" name="TextSlider.cpp" compile="1" resource="0" file="TextSlider.cpp"/>
+      <FILE id="t6Y43n" name="TextSlider.h" compile="0" resource="0" file="TextSlider.h"/>
+    </GROUP>
+    <GROUP id="{60A137F1-F4FC-D708-FF57-CF3743E92A2D}" name="Synth">
+      <FILE id="wF4hWX" name="LFO.h" compile="0" resource="0" file="Synth/LFO.h"/>
+      <FILE id="pktXZa" name="Osc.h" compile="0" resource="0" file="Synth/Osc.h"/>
+      <FILE id="jKnIdP" name="Sampler.cpp" compile="1" resource="0" file="Synth/Sampler.cpp"/>
+      <FILE id="HdKg0Q" name="Sampler.h" compile="0" resource="0" file="Synth/Sampler.h"/>
+      <FILE id="HX6tiI" name="Synth.cpp" compile="1" resource="0" file="Synth/Synth.cpp"/>
+      <FILE id="xKKWP3" name="Synth.h" compile="0" resource="0" file="Synth/Synth.h"/>
+      <FILE id="mImWNX" name="WavetableOsc.cpp" compile="1" resource="0"
+            file="Synth/WavetableOsc.cpp"/>
+      <FILE id="rVHKPx" name="WavetableOsc.h" compile="0" resource="0" file="Synth/WavetableOsc.h"/>
+      <FILE id="rK2uaM" name="WavetableVectors.h" compile="0" resource="0"
+            file="Synth/WavetableVectors.h"/>
+    </GROUP>
+    <GROUP id="{7AD5417F-AE0E-6D14-BC31-4F1D67FF1D2E}" name="Source">
+      <FILE id="fFutXA" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="Source/PluginProcessor.cpp"/>
+      <FILE id="LWtMsS" name="PluginProcessor.h" compile="0" resource="0"
+            file="Source/PluginProcessor.h"/>
+      <FILE id="grIXXl" name="PluginEditor.cpp" compile="1" resource="0"
+            file="Source/PluginEditor.cpp"/>
+      <FILE id="epic9X" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+    </GROUP>
+  </MAINGROUP>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
+  <EXPORTFORMATS>
+    <XCODE_MAC targetFolder="Builds/MacOSX">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="Capstone"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="Capstone"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="../../modules"/>
+        <MODULEPATH id="juce_audio_devices" path="../../modules"/>
+        <MODULEPATH id="juce_audio_formats" path="../../modules"/>
+        <MODULEPATH id="juce_audio_plugin_client" path="../../modules"/>
+        <MODULEPATH id="juce_audio_processors" path="../../modules"/>
+        <MODULEPATH id="juce_audio_utils" path="../../modules"/>
+        <MODULEPATH id="juce_core" path="../../modules"/>
+        <MODULEPATH id="juce_data_structures" path="../../modules"/>
+        <MODULEPATH id="juce_dsp" path="../../modules"/>
+        <MODULEPATH id="juce_events" path="../../modules"/>
+        <MODULEPATH id="juce_graphics" path="../../modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../../modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../../modules"/>
+      </MODULEPATHS>
+    </XCODE_MAC>
+  </EXPORTFORMATS>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_plugin_client" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="1"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+  </MODULES>
+</JUCERPROJECT>

@@ -1,0 +1,312 @@
+/*
+  ==============================================================================
+
+    This file contains the basic framework code for a JUCE plugin processor.
+
+  ==============================================================================
+*/
+
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+//==============================================================================
+CapstoneAudioProcessor::CapstoneAudioProcessor()
+#ifndef JucePlugin_PreferredChannelConfigurations
+     : AudioProcessor (BusesProperties()
+                     #if ! JucePlugin_IsMidiEffect
+                      #if ! JucePlugin_IsSynth
+                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                      #endif
+                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                     #endif
+                       ),
+
+// constructor stuff
+osMain(2, OVERSAMPLING_FACTOR, juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR)
+//osOsc1(2, OVERSAMPLING_FACTOR, juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR),
+//osSampler(2, OVERSAMPLING_FACTOR, juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR)
+
+#endif
+{
+    formatManager.registerBasicFormats();
+    for(int i=0; i<NUM_VOICES; i++) {
+        sampler.addVoice(new juce::SamplerVoice());
+    }
+    
+    parameterMap.reset(new AuxPort::ParameterMap(this));
+
+    osc1DAmt = new juce::AudioParameterFloat(juce::ParameterID{"1", 1}, "osc1Drive", juce::NormalisableRange<float>(0.0f, 100.f), 50.f);
+    parameterMap->addParameter(osc1DAmt);
+    osc2DAmt = new juce::AudioParameterFloat(juce::ParameterID{"2", 1}, "osc2Drive", juce::NormalisableRange<float>(0.0f, 100.f), 50.f);
+    parameterMap->addParameter(osc2DAmt);
+    samplerDAmt = new juce::AudioParameterFloat(juce::ParameterID{"3", 1}, "samplerDrive", juce::NormalisableRange<float>(0.0f, 100.f), 50.f);
+    parameterMap->addParameter(samplerDAmt);
+    
+    parameterMap->save();
+}
+
+CapstoneAudioProcessor::~CapstoneAudioProcessor()
+{
+    
+}
+
+//==============================================================================
+const juce::String CapstoneAudioProcessor::getName() const
+{
+    return JucePlugin_Name;
+}
+
+bool CapstoneAudioProcessor::acceptsMidi() const
+{
+   #if JucePlugin_WantsMidiInput
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+bool CapstoneAudioProcessor::producesMidi() const
+{
+   #if JucePlugin_ProducesMidiOutput
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+bool CapstoneAudioProcessor::isMidiEffect() const
+{
+   #if JucePlugin_IsMidiEffect
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+double CapstoneAudioProcessor::getTailLengthSeconds() const
+{
+    return 0.0;
+}
+
+int CapstoneAudioProcessor::getNumPrograms()
+{
+    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
+                // so this should be at least 1, even if you're not really implementing programs.
+}
+
+int CapstoneAudioProcessor::getCurrentProgram()
+{
+    return 0;
+}
+
+void CapstoneAudioProcessor::setCurrentProgram (int index)
+{
+}
+
+const juce::String CapstoneAudioProcessor::getProgramName (int index)
+{
+    return {};
+}
+
+void CapstoneAudioProcessor::changeProgramName (int index, const juce::String& newName)
+{
+}
+
+//==============================================================================
+void CapstoneAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+{
+    // Use this method as the place to do any pre-playback
+    // initialisation that you need..
+    
+    osc1.prepareToPlay(sampleRate * OVERSAMPLING_FACTOR);
+    osc1.setOscillator(Colin::Oscillator_Type::saw);
+    osc2.prepareToPlay(sampleRate * OVERSAMPLING_FACTOR);
+    osc2.setOscillator(Colin::Oscillator_Type::sine);
+    //noise.prepareToPlay(sampleRate * OVERSAMPLING_FACTOR);
+    //reverb.prepareToPlay(sampleRate * OVERSAMPLING_FACTOR, 120, 1000);
+    
+    sampler.setCurrentPlaybackSampleRate(sampleRate);
+    
+    distOsc1.setType(Colin::Distortion_Type::arctanSqrt);
+    distOsc1.setInputGain(3.f);
+    distOsc1.setOutputGain(-3.f);
+    distOsc2.setType(Colin::Distortion_Type::exponential);
+    distOsc2.setInputGain(3.f);
+    distOsc2.setOutputGain(-3.f);
+    distSample.setType(Colin::Distortion_Type::softClip);
+    distSample.setInputGain(3.f);
+    distSample.setOutputGain(-3.f);
+    
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = getTotalNumOutputChannels();
+    
+    osMain.reset();
+    osMain.initProcessing(samplesPerBlock);
+    limiter.reset();
+    limiter.prepare(spec);
+    limiter.setRatio(10);
+    limiter.setAttack(10);
+    limiter.setRelease(100);
+    limiter.setThreshold(-6);
+    
+    /*
+    osOsc1.reset();
+    osOsc1.initProcessing(samplesPerBlock);
+    osSampler.reset();
+    osSampler.initProcessing(samplesPerBlock);
+    */
+    
+    LPF.prepareToPlay(1500, 1, Colin::IIR_Type::LPF, sampleRate);
+    
+    ladder1.reset();
+    ladder1.prepare(spec);
+    ladder1.setMode(juce::dsp::LadderFilterMode::LPF12);
+    ladder1.setCutoffFrequencyHz(5000);
+    ladder1.setResonance(.3); // value between 0 and 1
+}
+
+void CapstoneAudioProcessor::releaseResources()
+{
+    // When playback stops, you can use this as an opportunity to free up any
+    // spare memory, etc.
+}
+
+#ifndef JucePlugin_PreferredChannelConfigurations
+bool CapstoneAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+  #if JucePlugin_IsMidiEffect
+    juce::ignoreUnused (layouts);
+    return true;
+  #else
+    // This is the place where you check if the layout is supported.
+    // In this template code we only support mono or stereo.
+    // Some plugin hosts, such as certain GarageBand versions, will only
+    // load plugins that support stereo bus layouts.
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
+     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+
+    // This checks if the input layout matches the output layout
+   #if ! JucePlugin_IsSynth
+    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
+        return false;
+   #endif
+
+    return true;
+  #endif
+}
+#endif
+
+void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+{
+    juce::ScopedNoDenormals noDenormals;
+    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumOutputChannels = getTotalNumOutputChannels();
+    
+    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+        buffer.clear (i, 0, buffer.getNumSamples());
+    
+    double bpm { 120 }; // default fallback when host does not provide info
+    if (auto bpmFromHost = *getPlayHead()->getPosition()->getBpm())
+        bpm = bpmFromHost;
+    
+    //juce::dsp::AudioBlock<float> mainBlock(buffer);
+    //juce::dsp::AudioBlock<float> mainBlockUp(buffer);
+    //mainBlockUp = osMain.processSamplesUp(mainBlock);
+    
+    /// OSC 1
+    juce::AudioBuffer<float> bufferOsc1(buffer);
+    juce::dsp::AudioBlock<float> blockOsc1(bufferOsc1);
+    juce::dsp::AudioBlock<float> blockOsc1Up(bufferOsc1);
+    blockOsc1Up = osMain.processSamplesUp(blockOsc1);
+    osc1.processBlock(blockOsc1Up, midiMessages);
+    distOsc1.setInputGain(*osc1DAmt / 10.f);
+    distOsc1.setOutputGain(-20);
+    distOsc1.processBlock(blockOsc1Up);
+    osMain.processSamplesDown(blockOsc1);
+    
+    /// OSC 2
+    juce::AudioBuffer<float> bufferOsc2(buffer);
+    juce::dsp::AudioBlock<float> blockOsc2(bufferOsc2);
+    juce::dsp::AudioBlock<float> blockOsc2Up(bufferOsc2);
+    blockOsc2Up = osMain.processSamplesUp(blockOsc2);
+    osc2.processBlock(blockOsc2Up, midiMessages);
+    distOsc2.setInputGain(*osc2DAmt / 10.f);
+    distOsc2.setOutputGain(-20);
+    distOsc2.processBlock(blockOsc2Up);
+    osMain.processSamplesDown(blockOsc2);
+    
+    /// SAMPLER
+    juce::AudioBuffer<float> bufferSampler(buffer);
+    juce::dsp::AudioBlock<float> blockSampler(bufferSampler);
+    juce::dsp::AudioBlock<float> blockSamplerUp(bufferSampler);
+    sampler.renderNextBlock(bufferSampler, midiMessages, 0, bufferSampler.getNumSamples());
+    blockSamplerUp = osMain.processSamplesUp(blockSampler);
+    distSample.setInputGain(*samplerDAmt / 10.f);
+    distSample.setOutputGain(-20);
+    distSample.processBlock(blockSamplerUp);
+    osMain.processSamplesDown(blockSampler);
+    
+    /// SUM
+    for(int channel = 0; channel < buffer.getNumChannels(); channel++) {
+        for(int sample = 0; sample < buffer.getNumSamples(); sample++) {
+            buffer.getWritePointer(channel)[sample] = blockSampler.getChannelPointer(channel)[sample] + blockOsc1.getChannelPointer(channel)[sample];
+            limiter.processSample(channel, sample);
+        }
+    }
+    
+    //LPF.processBufferStereo(buffer);
+}
+
+//==============================================================================
+bool CapstoneAudioProcessor::hasEditor() const
+{
+    return true; // (change this to false if you choose to not supply an editor)
+}
+
+juce::AudioProcessorEditor* CapstoneAudioProcessor::createEditor()
+{
+    return new CapstoneAudioProcessorEditor (*this);
+}
+
+//==============================================================================
+void CapstoneAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    // You should use this method to store your parameters in the memory block.
+    // You could do that either as raw data, or use the XML or ValueTree classes
+    // as intermediaries to make it easy to save and load complex data.
+}
+
+void CapstoneAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    // You should use this method to restore your parameters from this memory block,
+    // whose contents will have been created by the getStateInformation() call.
+}
+
+//==============================================================================
+// This creates new instances of the plugin..
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new CapstoneAudioProcessor();
+}
+
+
+//==============================================================================
+// new stuff
+
+void CapstoneAudioProcessor::loadFile() {
+    juce::File f = (juce::File::getSpecialLocation(juce::File::tempDirectory));
+    juce::BigInteger range;
+    range.setRange(0, 128, true);
+    juce::FileChooser chooser { "Load a sample", f};
+    if(chooser.browseForFileToOpen()) {
+        auto file = chooser.getResult();
+        std::unique_ptr<juce::AudioFormatReader> formatReader(formatManager.createReaderFor(file));
+        if (formatReader)
+        {
+            sampler.addSound(new juce::SamplerSound("Sample", *formatReader, range, 60, 0.0, 0.001, 10.0));
+        }
+    }
+}
