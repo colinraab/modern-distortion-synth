@@ -75,7 +75,7 @@ private:
     std::vector<juce::dsp::StateVariableTPTFilter<float>> TPTs;
     std::vector<juce::dsp::LadderFilter<float>*> ladders;
     float ADSRDepth = 0.f;
-    std::list<int> curVoices;  // max 8 voices, make custom data typ
+    std::list<int> curVoices;  // max 8 voices, make custom data typee
     int distType = 1;
     int filterType = 1;
     int curTPTMode = 1;
