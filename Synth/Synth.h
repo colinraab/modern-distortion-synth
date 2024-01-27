@@ -76,7 +76,7 @@ private:
     std::vector<juce::dsp::LadderFilter<float>*> ladders;
     float ADSRDepth = 0.f;
     std::list<int> curVoices;  // max 8 voices, make custom data typee
-    int distType = 1;
+    int distType = 1; //h elp
     int filterType = 1;
     int curTPTMode = 1;
     int curLadderMode = 1;
