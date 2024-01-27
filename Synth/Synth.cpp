@@ -213,7 +213,7 @@ void Synth::renderBuffers(std::vector<juce::AudioBuffer<float>*>& buffers, int s
                 if(envToVol) {
                     oscillators[i].stop();
                     curVoices.remove(i);
-                    continue;
+                    continue; 
                 }
             }
             auto* firstChannel = buffers[i]->getWritePointer(0);
