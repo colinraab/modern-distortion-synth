@@ -23,6 +23,126 @@
 //==============================================================================
 /**
 */
+
+class globalVoice {
+public:
+    globalVoice(double sampleRate, juce::ADSR::Parameters* params, int pitch, int bufChan, int bufSize) {
+        osc1Buffer = new juce::AudioBuffer<float>(bufChan,bufSize);
+        osc2Buffer = new juce::AudioBuffer<float>(bufChan,bufSize);
+        noiseBuffer = new juce::AudioBuffer<float>(bufChan,bufSize);
+        samplerBuffer = new juce::AudioBuffer<float>(bufChan,bufSize);
+        osc1Buffer->clear();
+        osc2Buffer->clear();
+        noiseBuffer->clear();
+        samplerBuffer->clear();
+        adsr.setSampleRate(sampleRate);
+        adsr.setParameters(*params);
+        adsr.reset();
+        this->pitch = pitch;
+        adsr.noteOn();
+    }
+    
+    ~globalVoice() {
+        delete osc1Buffer;
+        delete osc2Buffer;
+        delete noiseBuffer;
+        delete samplerBuffer;
+    }
+    
+    juce::AudioBuffer<float>* getOsc1() {
+        return osc1Buffer;
+    }
+    
+    juce::AudioBuffer<float>* getOsc2() {
+        return osc2Buffer;
+    }
+    
+    juce::AudioBuffer<float>* getNoise() {
+        return noiseBuffer;
+    }
+    
+    juce::AudioBuffer<float>* getSampler() {
+        return samplerBuffer;
+    }
+    
+    void setADSRParameters(juce::ADSR::Parameters params) {
+        adsr.setParameters(params);
+    }
+    
+    void noteOn() {
+        adsr.noteOn();
+    }
+    
+    void noteOff() {
+        adsr.noteOff();
+    }
+    
+    bool isActive() {
+        return adsr.isActive();
+    }
+    
+    float getNextSample() {
+        return adsr.getNextSample();
+    }
+    
+    void reset() {
+        adsr.reset();
+    }
+    
+    void setRelease() {
+        release = true;
+    }
+    
+    int getPitch() {
+        return pitch;
+    }
+    
+    bool isRelease() {
+        return release;
+    }
+    
+    void cycleADSR(int offset) {
+        for(int i=offset; i<osc1Buffer->getNumSamples(); i++) {
+            adsr.getNextSample();
+        }
+    }
+    
+    void applyADSR() {
+        float envSampleStart = adsr.getNextSample();
+        cycleADSR(2);
+        float envSampleEnd = adsr.getNextSample();
+        osc1Buffer->applyGainRamp(0, osc1Buffer->getNumSamples(), envSampleStart, envSampleEnd);
+        osc2Buffer->applyGainRamp(0, osc1Buffer->getNumSamples(), envSampleStart, envSampleEnd);
+        noiseBuffer->applyGainRamp(0, osc1Buffer->getNumSamples(), envSampleStart, envSampleEnd);
+        samplerBuffer->applyGainRamp(0, osc1Buffer->getNumSamples(), envSampleStart, envSampleEnd);
+    }
+    
+    float getSample(int channel, int sample) {
+        return osc1Buffer->getSample(channel, sample) * osc1Vol + osc2Buffer->getSample(channel, sample) * osc2Vol + noiseBuffer->getSample(channel, sample) * noiseVol + samplerBuffer->getSample(channel, sample) * samplerVol;
+    }
+    
+    void setVolume(float osc1, float osc2, float noise, float sampler) {
+        osc1Vol = osc1;
+        osc2Vol = osc2;
+        noiseVol = noise;
+        samplerVol = sampler;
+    }
+private:
+    juce::AudioBuffer<float>* osc1Buffer;
+    juce::AudioBuffer<float>* osc2Buffer;
+    juce::AudioBuffer<float>* noiseBuffer;
+    juce::AudioBuffer<float>* samplerBuffer;
+    juce::ADSR adsr;
+    int pitch = 0;
+    bool release = false;
+    
+    float osc1Vol;
+    float osc2Vol;
+    float noiseVol;
+    float samplerVol;
+};
+
+
 class CapstoneAudioProcessor  : public juce::AudioProcessor
                             #if JucePlugin_Enable_ARA
                              , public juce::AudioProcessorARAExtension
@@ -80,7 +200,7 @@ public:
     float getSampleFromSampler(std::vector<juce::AudioBuffer<float>*>&, int channel, int sample);
     void applyADSR(std::vector<juce::AudioBuffer<float>*>&);
     void applyADSRSampler(std::vector<juce::AudioBuffer<float>*>&);
-    void enableADSR(juce::MidiBuffer&);
+    void enableADSR(juce::MidiBuffer&, int bufChan, int bufSize);
     void setADSR(float atk, float dec, float sus, float rel);
     Colin::Distortion* distMain;
     
@@ -100,6 +220,10 @@ private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CapstoneAudioProcessor)
         
+    juce::dsp::ProcessSpec spec;
+    
+    std::vector<std::unique_ptr<globalVoice>> globalVoices;
+
     std::vector<juce::AudioBuffer<float>*> osc1Buffers;
     std::vector<juce::AudioBuffer<float>*> osc2Buffers;
     std::vector<juce::AudioBuffer<float>*> noiseBuffers;
@@ -130,8 +254,9 @@ private:
     std::vector<juce::Point<float>*> pointsM;
     std::vector<float> slopeFactors;
     
-    std::vector<juce::ADSR> ADSRs;
-    std::vector<int> activeADSRs;
+    juce::ADSR::Parameters* ADSRparams;
+    //std::vector<newADSR*> ADSRs;
+    //std::vector<int> activeADSRs;
     
     juce::AudioParameterFloat * osc1Atk;
     juce::AudioParameterFloat * osc1Dec;

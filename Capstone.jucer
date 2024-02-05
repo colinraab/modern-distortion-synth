@@ -58,6 +58,8 @@
       <FILE id="t6Y43n" name="TextSlider.h" compile="0" resource="0" file="TextSlider.h"/>
     </GROUP>
     <GROUP id="{60A137F1-F4FC-D708-FF57-CF3743E92A2D}" name="Synth">
+      <FILE id="PGyrQJ" name="Voice.h" compile="0" resource="0" file="Synth/Voice.h"/>
+      <FILE id="hY9NOX" name="Voice.cpp" compile="1" resource="0" file="Synth/Voice.cpp"/>
       <FILE id="wF4hWX" name="LFO.h" compile="0" resource="0" file="Synth/LFO.h"/>
       <FILE id="pktXZa" name="Osc.h" compile="0" resource="0" file="Synth/Osc.h"/>
       <FILE id="jKnIdP" name="Sampler.cpp" compile="1" resource="0" file="Synth/Sampler.cpp"/>
