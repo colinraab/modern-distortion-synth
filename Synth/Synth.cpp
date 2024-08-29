@@ -22,6 +22,7 @@ Synth::~Synth() {
 
 void Synth::prepareToPlay(juce::dsp::ProcessSpec s)
 {
+    voices.clear();
     spec = s;
     this->sampleRate = s.sampleRate;
     dist.setType(Distortion_Type::none);
@@ -74,6 +75,9 @@ std::vector<float> Synth::getNoise() {
 }
 
 void Synth::setEnvRouting(bool v, bool d, bool f) {
+    envToVol = v;
+    envToDist = d;
+    envToFilter = f;
     for(int i=0; i<voices.size(); i++) {
         voices[i]->setEnvRouting(v, d, f);
     }
@@ -191,11 +195,6 @@ void Synth::processDist(juce::AudioBuffer<float>* buffer, int i) {
     if(envToDist) {
         float envSample = voices[i]->getEnvSample();
         dist.setEnv(envSample, ADSRDepth);
-        if(!envToVol && !envToFilter) {
-            for(int j=0; j<buffer->getNumSamples() - 2; j++) {
-                envSample = voices[i]->getEnvSample();
-            }
-        }
     }
     if(distType == 2) dist.processBufferWaveshaper(*buffer, bezier);
     else dist.processBuffer(*buffer);

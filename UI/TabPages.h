@@ -1133,7 +1133,7 @@ struct NoisePage : public juce::Component
         
         dist = distSel;
         distortionChoice.addItem("None", 1);
-        distortionChoice.addItem("Arbitrary", 2);
+        //distortionChoice.addItem("Arbitrary", 2);
         distortionChoice.addItem("Exponential", 3);
         distortionChoice.addItem("Soft-Clip", 4);
         distortionChoice.addItem("Fuzz", 5);

@@ -289,14 +289,12 @@ presetManager(&parameterMap)
     osc1Buffers.resize(8);
     osc2Buffers.resize(8);
     noiseBuffers.resize(8);
-    samplerBuffers.resize(sampler->NUM_VOICES);
+    samplerBuffers.resize(8);
     
     for(int i=0; i<8; i++) {
         osc1Buffers[i] = new juce::AudioBuffer<float>(2, 512);
         osc2Buffers[i] = new juce::AudioBuffer<float>(2, 512);
         noiseBuffers[i] = new juce::AudioBuffer<float>(2, 512);
-    }
-    for(int i=0; i<sampler->NUM_VOICES; i++) {
         samplerBuffers[i] = new juce::AudioBuffer<float>(2, 512);
     }
     
@@ -329,15 +327,14 @@ CapstoneAudioProcessor::~CapstoneAudioProcessor()
     delete osc1;
     delete osc2;
     delete noise;
-    delete distMain;
-    for(int i=0; i<sampler->NUM_VOICES; i++) {
-        delete samplerBuffers[i];
-    }
     delete sampler;
+    delete distMain;
+
     for (int i=0; i<8; i++) {
         delete osc1Buffers[i];
         delete osc2Buffers[i];
         delete noiseBuffers[i];
+        delete samplerBuffers[i];
     }
     globalVoices.clear();
 
@@ -421,7 +418,7 @@ void CapstoneAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     osc1->prepareToPlay(spec);
     osc1->setOscillator(3);
     osc2->prepareToPlay(spec);
-    osc2->setOscillator(1);
+    osc2->setOscillator(3);
     noise->prepareToPlay(spec);
     noise->setNoise(true);
     noise->setOscillator(1);
@@ -459,6 +456,8 @@ void CapstoneAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     prepareBezier(bezierM, xParamM, yParamM, slopeParamM, pointsM, 4);
     
     ADSRparams = new juce::ADSR::Parameters(0.55, 0.5, 0.8, 0.9);
+    
+    globalVoices.clear();
 }
 
 void CapstoneAudioProcessor::releaseResources()
@@ -539,22 +538,23 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     if(sampler->isSampleLoaded() && *samplerVol != 0) {
         sampler->setLoop(*samplerLoop);
         sampler->setPitch(*samplerPitch, *samplerRepitch);
-        sampler->setADSR(*samplerAtk / 30 + 0.05, *samplerDec / 30, *samplerSus / 100, std::powf(*samplerRel, 1.2) / 100, *samplerDepth / 100);
-        sampler->setFilter(*samplerFilter, *samplerCutoff, (*samplerRes + 1) / 101, *samplerKeytrack, *samplerktA / 100 + 1);
+        sampler->setADSR(*samplerAtk / 30.f + 0.05f, *samplerDec / 30.f, *samplerSus / 100.f, std::powf(*samplerRel, 1.2f) / 100.f, *samplerDepth / 100.f);
+        sampler->setFilter(*samplerFilter, *samplerCutoff, (*samplerRes + 1.f) / 101.f, *samplerKeytrack, *samplerktA / 100.f + 1.f);
         sampler->setEnvRouting(*sampleretV, *sampleretD, *sampleretF);
-        sampler->processBuffers(samplerBuffers, midiMessages);
+        //sampler->processBuffers(samplerBuffers, midiMessages);
+        for(int i=0; i<globalVoices.size(); i++) {
+            sampler->processBuffer(globalVoices[i]->getSampler(), midiMessages, i);
+        }
     }
     
     /// NOISE
     noise->setOscillator(*noiseWave);
     if(*noiseDistSel == 2) setBezier(bezierN, xParamN, yParamN, slopeParamN, pointsN, 2);
-    noise->setDistortion(*noiseDistSel, *noiseDAmt / 10.f, *noiseDAmt / -15.f - 3.f, *noiseDCoeff / 100, *noiseDistSlider / 100, bezierN);
-    //if(*noiseVol != 0 || *fmAmt2 != 0) {
+    noise->setDistortion(*noiseDistSel, *noiseDAmt / 10.f, *noiseDAmt / -15.f - 3.f, *noiseDCoeff / 100.f, *noiseDistSlider / 100.f, bezierN);
     noise->setOscVol(*noiseWaveSlider/100);
-    noise->setADSR(*noiseAtk / 30 + 0.05, *noiseDec / 30, *noiseSus / 100, std::powf(*noiseRel, 1.2) / 100, *noiseDepth / 100);
-    noise->setFilter(*noiseFilter, *noiseCutoff, (*noiseRes + 1) / 101, *noiseKeytrack, *noisektA / 100 + 1);
+    noise->setADSR(*noiseAtk / 30.f + 0.05f, *noiseDec / 30.f, *noiseSus / 100.f, std::powf(*noiseRel, 1.2f) / 100.f, *noiseDepth / 100.f);
+    noise->setFilter(*noiseFilter, *noiseCutoff, (*noiseRes + 1) / 101.f, *noiseKeytrack, *noisektA / 100.f + 1.f);
     noise->setEnvRouting(*noiseetV, *noiseetD, *noiseetF);
-    //noise->processBuffers(noiseBuffers, midiMessages);
     for(int i=0; i<globalVoices.size(); i++) {
         noise->processBuffer(globalVoices[i]->getNoise(), midiMessages, i);
     }
@@ -562,15 +562,14 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     /// OSC 2
     osc2->setOscillator(*osc2Wave);
     if(*osc2DistSel == 2) setBezier(bezier2, xParam2, yParam2, slopeParam2, points2, 1);
-    osc2->setDistortion(*osc2DistSel, *osc2DAmt / 10.f, *osc2DAmt / -15.f - 3.f, *osc2DCoeff / 100, *osc2DistSlider / 100, bezier2);
-    //if(*osc2Vol != 0 || *fmAmt1 != 0) {
-    osc2->setOscVol(*osc2WaveSlider/100);
+    osc2->setDistortion(*osc2DistSel, *osc2DAmt / 10.f, *osc2DAmt / -15.f - 3.f, *osc2DCoeff / 100.f, *osc2DistSlider / 100.f, bezier2);
+    osc2->setOscVol(*osc2WaveSlider/100.f);
     osc2->setPitch(*osc2Pitch);
-    osc2->setADSR(*osc2Atk / 30 + 0.05, *osc2Dec / 30, *osc2Sus / 100, std::powf(*osc2Rel, 1.2) / 100, *osc2Depth / 100);
+    osc2->setADSR(*osc2Atk / 30.f + 0.05f, *osc2Dec / 30.f, *osc2Sus / 100.f, std::powf(*osc2Rel, 1.2f) / 100.f, *osc2Depth / 100.f);
     osc2->setFilter(*osc2Filter, *osc2Cutoff, (*osc2Res + 1) / 101, *osc2Keytrack, *osc2ktA / 100 + 1);
-    osc2->setEnvRouting(*osc2etV, *osc2etD / 10, *osc2etF);
+    osc2->setEnvRouting(*osc2etV, *osc2etD / 10.f, *osc2etF);
     if(*fmAmt2 != 0) {
-        osc2->setFMDepth(*fmAmt2 / 25);
+        osc2->setFMDepth(*fmAmt2 / 25.f);
         for(int i=0; i<globalVoices.size(); i++) {
             osc2->processBufferFM(globalVoices[i]->getOsc2(), globalVoices[i]->getNoise(), midiMessages, i);
         }
@@ -583,15 +582,15 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     
     /// OSC 1
     osc1->setOscillator(*osc1Wave);
-    osc1->setOscVol(*osc1WaveSlider/100);
+    osc1->setOscVol(*osc1WaveSlider/100.f);
     osc1->setPitch(*osc1Pitch);
-    osc1->setADSR(*osc1Atk / 30.f + 0.05, *osc1Dec / 30.f, *osc1Sus / 100.f, std::powf(*osc1Rel, 1.2) / 100.f, *osc1Depth / 100.f);
-    osc1->setFilter(*osc1Filter, *osc1Cutoff, (*osc1Res + 1) / 101, *osc1Keytrack, *osc1ktA / 100 + 1);
+    osc1->setADSR(*osc1Atk / 30.f + 0.05f, *osc1Dec / 30.f, *osc1Sus / 100.f, std::powf(*osc1Rel, 1.2) / 100.f, *osc1Depth / 100.f);
+    osc1->setFilter(*osc1Filter, *osc1Cutoff, (*osc1Res + 1.f) / 101.f, *osc1Keytrack, *osc1ktA / 100.f + 1.f);
     if(*osc1DistSel == 2) setBezier(bezier1, xParam1, yParam1, slopeParam1, points1, 0);
     osc1->setDistortion(*osc1DistSel, *osc1DAmt / 10.f, *osc1DAmt / -15.f - 3.f, *osc1DCoeff / 100.f, *osc1DistSlider / 100.f, bezier1);
     osc1->setEnvRouting(*osc1etV, *osc1etD, *osc1etF);
     if(*fmAmt1 != 0) {
-        osc1->setFMDepth(*fmAmt1 / 25);
+        osc1->setFMDepth(*fmAmt1 / 25.f);
         for(int i=0; i<globalVoices.size(); i++) {
             osc1->processBufferFM(globalVoices[i]->getOsc1(), globalVoices[i]->getOsc2(), midiMessages, i);
         }
@@ -637,7 +636,7 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     auto pcM = juce::dsp::ProcessContextReplacing<float>(blockMain);
     ladderM.setMode(getFilterMode(*mainFilter));
     ladderM.setCutoffFrequencyHz(*mainCutoff);
-    ladderM.setResonance((*mainRes + 1) / 101);
+    ladderM.setResonance((*mainRes + 1.f) / 101.f);
     ladderM.process(pcM);
     
     limiter.setThreshold(*cThresh);
@@ -773,7 +772,7 @@ void CapstoneAudioProcessor::enableADSR(juce::MidiBuffer& midiMessages, int bufC
             osc1->deleteVoice(i);
             osc2->deleteVoice(i);
             noise->deleteVoice(i);
-            //sampler->deleteVoice(i);
+            sampler->deleteVoice(i);
         }
     }
 }
