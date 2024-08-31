@@ -286,18 +286,15 @@ presetManager(&parameterMap)
     sampler = new Colin::Sampler();
     distMain = new Colin::Distortion();
     
-    osc1Buffers.resize(256);
-    osc2Buffers.resize(256);
-    noiseBuffers.resize(256);
-    samplerBuffers.resize(sampler->NUM_VOICES);
-    ADSRs.resize(256);
+    osc1Buffers.resize(8);
+    osc2Buffers.resize(8);
+    noiseBuffers.resize(8);
+    samplerBuffers.resize(8);
     
-    for(int i=0; i<256; i++) {
+    for(int i=0; i<8; i++) {
         osc1Buffers[i] = new juce::AudioBuffer<float>(2, 512);
         osc2Buffers[i] = new juce::AudioBuffer<float>(2, 512);
         noiseBuffers[i] = new juce::AudioBuffer<float>(2, 512);
-    }
-    for(int i=0; i<sampler->NUM_VOICES; i++) {
         samplerBuffers[i] = new juce::AudioBuffer<float>(2, 512);
     }
     
@@ -330,16 +327,17 @@ CapstoneAudioProcessor::~CapstoneAudioProcessor()
     delete osc1;
     delete osc2;
     delete noise;
-    delete distMain;
-    for(int i=0; i<sampler->NUM_VOICES; i++) {
-        delete samplerBuffers[i];
-    }
     delete sampler;
-    for (int i=0; i<256; i++) {
+    delete distMain;
+
+    for (int i=0; i<8; i++) {
         delete osc1Buffers[i];
         delete osc2Buffers[i];
         delete noiseBuffers[i];
+        delete samplerBuffers[i];
     }
+    globalVoices.clear();
+
     delete oscilloscope;
     delete bezier1;
     delete bezier2;
@@ -413,7 +411,6 @@ void CapstoneAudioProcessor::changeProgramName (int index, const juce::String& n
 //==============================================================================
 void CapstoneAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumOutputChannels();
@@ -421,16 +418,11 @@ void CapstoneAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     osc1->prepareToPlay(spec);
     osc1->setOscillator(3);
     osc2->prepareToPlay(spec);
-    osc2->setOscillator(1);
+    osc2->setOscillator(3);
     noise->prepareToPlay(spec);
     noise->setNoise(true);
     noise->setOscillator(1);
     sampler->prepareToPlay(spec);
-    
-    for(int i=0; i<256; i++) {
-        ADSRs[i].reset();
-        ADSRs[i].setSampleRate(sampleRate);
-    }
 
     distMain->setType(1);
     distMain->setInputGain(3.f);
@@ -462,6 +454,10 @@ void CapstoneAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     prepareBezier(bezierN, xParamN, yParamN, slopeParamN, pointsN, 2);
     prepareBezier(bezierS, xParamS, yParamS, slopeParamS, pointsS, 3);
     prepareBezier(bezierM, xParamM, yParamM, slopeParamM, pointsM, 4);
+    
+    ADSRparams = new juce::ADSR::Parameters(0.55, 0.5, 0.8, 0.9);
+    
+    globalVoices.clear();
 }
 
 void CapstoneAudioProcessor::releaseResources()
@@ -510,7 +506,7 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         
         /// Resize buffers if necessary
         if(osc1Buffers[0]->getNumSamples() != numSamples) {
-            for(int j=0; j<256; j++) {
+            for(int j=0; j<8; j++) {
                 osc1Buffers[j]->setSize(numChannels, numSamples);
                 osc2Buffers[j]->setSize(numChannels, numSamples);
                 noiseBuffers[j]->setSize(numChannels, numSamples);
@@ -521,7 +517,7 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         }
         
         /// Clear buffers that currently contain audio data
-        for(int j=0; j<256; j++) {
+        for(int j=0; j<8; j++) {
             osc1Buffers[j]->clear(i, 0, numSamples);
             osc2Buffers[j]->clear(i, 0, numSamples);
             noiseBuffers[j]->clear(i, 0, numSamples);
@@ -531,107 +527,100 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         }
     }
     
-    /*
-    double bpm { 120 }; // default fallback when host does not provide info
-    if (auto bpmFromHost = *getPlayHead()->getPosition()->getBpm())
-        bpm = bpmFromHost;
-     */
+    /// Update global ADSR and check for new MIDI events to create new global voices
+    enableADSR(midiMessages, buffer.getNumChannels(), buffer.getNumSamples());
+    setADSR(*mainAtk / 20.f + 0.05f, *mainDec / 20.f, *mainSus / 100.f, std::powf(*mainRel, 1.4f) / 100.f);
     
     /// SAMPLER
     if(*samplerDistSel == 2) setBezier(bezierS, xParamS, yParamS, slopeParamS, pointsS, 3);
     sampler->setDistortion(*samplerDistSel, *samplerDAmt / 10.f, *samplerDAmt / -15.f - 3.f, *samplerDCoeff / 100.f, *samplerDistSlider / 100.f, bezierS);
     sampler->setSampleLength(*samplerWaveSlider / 100.f);
-    if(sampler->isSampleLoaded() && *samplerVol != 0) {
+    if(sampler->isSampleLoaded()) {
         sampler->setLoop(*samplerLoop);
         sampler->setPitch(*samplerPitch, *samplerRepitch);
-        sampler->setADSR(*samplerAtk / 30 + 0.05, *samplerDec / 30, *samplerSus / 100, std::powf(*samplerRel, 1.2) / 100, *samplerDepth / 100);
-        sampler->setFilter(*samplerFilter, *samplerCutoff, (*samplerRes + 1) / 101, *samplerKeytrack, *samplerktA / 100 + 1);
+        sampler->setADSR(*samplerAtk / 30.f + 0.05f, *samplerDec / 30.f, *samplerSus / 100.f, std::powf(*samplerRel, 1.2f) / 100.f, *samplerDepth / 100.f);
+        sampler->setFilter(*samplerFilter, *samplerCutoff, (*samplerRes + 1.f) / 101.f, *samplerKeytrack, *samplerktA);
         sampler->setEnvRouting(*sampleretV, *sampleretD, *sampleretF);
-        sampler->processBuffers(samplerBuffers, midiMessages);
+        //sampler->processBuffers(samplerBuffers, midiMessages);
+        for(int i=0; i<globalVoices.size(); i++) {
+            sampler->processBuffer(globalVoices[i]->getSampler(), midiMessages, i);
+        }
     }
     
     /// NOISE
     noise->setOscillator(*noiseWave);
     if(*noiseDistSel == 2) setBezier(bezierN, xParamN, yParamN, slopeParamN, pointsN, 2);
-    noise->setDistortion(*noiseDistSel, *noiseDAmt / 10.f, *noiseDAmt / -15.f - 3.f, *noiseDCoeff / 100, *noiseDistSlider / 100, bezierN);
-    if(*noiseVol != 0 || *fmAmt2 != 0) {
-        noise->setOscVol(*noiseWaveSlider/100);
-        noise->setADSR(*noiseAtk / 30 + 0.05, *noiseDec / 30, *noiseSus / 100, std::powf(*noiseRel, 1.2) / 100, *noiseDepth / 100);
-        noise->setFilter(*noiseFilter, *noiseCutoff, (*noiseRes + 1) / 101, *noiseKeytrack, *noisektA / 100 + 1);
-        noise->setEnvRouting(*noiseetV, *noiseetD, *noiseetF);
-        noise->processBuffers(noiseBuffers, midiMessages);
+    noise->setDistortion(*noiseDistSel, *noiseDAmt / 10.f, *noiseDAmt / -15.f - 3.f, *noiseDCoeff / 100.f, *noiseDistSlider / 100.f, bezierN);
+    noise->setOscVol(*noiseWaveSlider/100);
+    noise->setADSR(*noiseAtk / 30.f + 0.05f, *noiseDec / 30.f, *noiseSus / 100.f, std::powf(*noiseRel, 1.2f) / 100.f, *noiseDepth / 100.f);
+    noise->setFilter(*noiseFilter, *noiseCutoff, (*noiseRes + 1) / 101.f, *noiseKeytrack, *noisektA);
+    noise->setEnvRouting(*noiseetV, *noiseetD, *noiseetF);
+    for(int i=0; i<globalVoices.size(); i++) {
+        noise->processBuffer(globalVoices[i]->getNoise(), midiMessages, i);
     }
     
     /// OSC 2
     osc2->setOscillator(*osc2Wave);
     if(*osc2DistSel == 2) setBezier(bezier2, xParam2, yParam2, slopeParam2, points2, 1);
-    osc2->setDistortion(*osc2DistSel, *osc2DAmt / 10.f, *osc2DAmt / -15.f - 3.f, *osc2DCoeff / 100, *osc2DistSlider / 100, bezier2);
-    if(*osc2Vol != 0 || *fmAmt1 != 0) {
-        osc2->setOscVol(*osc2WaveSlider/100);
-        osc2->setPitch(*osc2Pitch);
-        osc2->setADSR(*osc2Atk / 30 + 0.05, *osc2Dec / 30, *osc2Sus / 100, std::powf(*osc2Rel, 1.2) / 100, *osc2Depth / 100);
-        osc2->setFilter(*osc2Filter, *osc2Cutoff, (*osc2Res + 1) / 101, *osc2Keytrack, *osc2ktA / 100 + 1);
-        osc2->setEnvRouting(*osc2etV, *osc2etD / 10, *osc2etF);
-        if(*fmAmt2 != 0) {
-            osc2->setFMDepth(*fmAmt2 / 25);
-            osc2->processBuffersFM(osc2Buffers, noiseBuffers, midiMessages);
+    osc2->setDistortion(*osc2DistSel, *osc2DAmt / 10.f, *osc2DAmt / -15.f - 3.f, *osc2DCoeff / 100.f, *osc2DistSlider / 100.f, bezier2);
+    osc2->setOscVol(*osc2WaveSlider/100.f);
+    osc2->setPitch(*osc2Pitch);
+    osc2->setADSR(*osc2Atk / 30.f + 0.05f, *osc2Dec / 30.f, *osc2Sus / 100.f, std::powf(*osc2Rel, 1.2f) / 100.f, *osc2Depth / 100.f);
+    osc2->setFilter(*osc2Filter, *osc2Cutoff, (*osc2Res + 1) / 101, *osc2Keytrack, *osc2ktA);
+    osc2->setEnvRouting(*osc2etV, *osc2etD / 10.f, *osc2etF);
+    if(*fmAmt2 != 0) {
+        osc2->setFMDepth(*fmAmt2 / 25.f);
+        for(int i=0; i<globalVoices.size(); i++) {
+            osc2->processBufferFM(globalVoices[i]->getOsc2(), globalVoices[i]->getNoise(), midiMessages, i);
         }
-        else osc2->processBuffers(osc2Buffers, midiMessages);
+    }
+    else {
+        for(int i=0; i<globalVoices.size(); i++) {
+            osc2->processBuffer(globalVoices[i]->getOsc2(), midiMessages, i);
+        }
     }
     
     /// OSC 1
     osc1->setOscillator(*osc1Wave);
-    osc1->setOscVol(*osc1WaveSlider/100);
+    osc1->setOscVol(*osc1WaveSlider/100.f);
     osc1->setPitch(*osc1Pitch);
-    osc1->setADSR(*osc1Atk / 30.f + 0.05, *osc1Dec / 30.f, *osc1Sus / 100.f, std::powf(*osc1Rel, 1.2) / 100.f, *osc1Depth / 100.f);
-    osc1->setFilter(*osc1Filter, *osc1Cutoff, (*osc1Res + 1) / 101, *osc1Keytrack, *osc1ktA / 100 + 1);
+    osc1->setADSR(*osc1Atk / 30.f + 0.05f, *osc1Dec / 30.f, *osc1Sus / 100.f, std::powf(*osc1Rel, 1.2) / 100.f, *osc1Depth / 100.f);
+    osc1->setFilter(*osc1Filter, *osc1Cutoff, (*osc1Res + 1.f) / 101.f, *osc1Keytrack, *osc1ktA);
     if(*osc1DistSel == 2) setBezier(bezier1, xParam1, yParam1, slopeParam1, points1, 0);
     osc1->setDistortion(*osc1DistSel, *osc1DAmt / 10.f, *osc1DAmt / -15.f - 3.f, *osc1DCoeff / 100.f, *osc1DistSlider / 100.f, bezier1);
     osc1->setEnvRouting(*osc1etV, *osc1etD, *osc1etF);
     if(*fmAmt1 != 0) {
-        osc1->setFMDepth(*fmAmt1 / 25);
-        osc1->processBuffersFM(osc1Buffers, osc2Buffers, midiMessages);
+        osc1->setFMDepth(*fmAmt1 / 25.f);
+        for(int i=0; i<globalVoices.size(); i++) {
+            osc1->processBufferFM(globalVoices[i]->getOsc1(), globalVoices[i]->getOsc2(), midiMessages, i);
+        }
     }
-    else osc1->processBuffers(osc1Buffers, midiMessages);
-    
+    else {
+        for(int i=0; i<globalVoices.size(); i++) {
+            osc1->processBuffer(globalVoices[i]->getOsc1(), midiMessages, i);
+        }
+    }
     
     /// Apply volume envelope (set in main tab) to each of the sources
-    enableADSR(midiMessages);
-    setADSR(*mainAtk / 20 + 0.05, *mainDec / 20, *mainSus / 100, std::powf(*mainRel, 1.4) / 100);
-    applyADSR(osc1Buffers);
-    int a = numSamples-1;
-    if(*osc2Vol != 0 || *fmAmt1 != 0) {
-        applyADSR(osc2Buffers);
-        a--;
+    for(int i=0; i<globalVoices.size(); i++) {
+        globalVoices[i]->applyADSR();
     }
-    if(*noiseVol != 0 || *fmAmt2 != 0) {
-        applyADSR(noiseBuffers);
-        a--;
-    }
-    if(sampler->isSampleLoaded() && *samplerVol != 0) {
-        applyADSRSampler(samplerBuffers);
-        a--;
-    }
-    /// Calculate envelope value only once per buffer to save computational cost
-    /// To synchronize envelope with buffer, repeat getNextSample()
-    int t;
-    for(int i=0; i<activeADSRs.size(); i++) {
-        for(int s=0; s<a; s++) {
-            t = ADSRs[activeADSRs[i]].getNextSample();
-        }
+    
+    for(int i=0; i<globalVoices.size(); i++) {
+        globalVoices[i]->setVolume(*osc1Vol/90.f, *osc2Vol/90.f, *noiseVol/90.f, *samplerVol/90.f);
     }
     
     /// SUM
     for(int channel = 0; channel < numChannels; channel++) {
         for(int sample = 0; sample < numSamples; sample++) {
-            float osc1Sample = getSampleFromBuffers(osc1Buffers, channel, sample) * (*osc1Vol / 90);
-            float osc2Sample = getSampleFromBuffers(osc2Buffers, channel, sample) * (*osc2Vol / 90);
-            float noiseSample = getSampleFromBuffers(noiseBuffers, channel, sample) * (*noiseVol / 90);
-            float samplerSample = getSampleFromSampler(samplerBuffers, channel, sample) * (*samplerVol / 90);
-            buffer.getWritePointer(channel)[sample] = (osc1Sample + osc2Sample + noiseSample + samplerSample) * *mainVol/100;
-            //buffer.getWritePointer(channel)[sample] = (osc1Sample) * *mainVol/100;
+            float output = 0.f;
+            for(int i=0; i<globalVoices.size(); i++) {
+                output = output + globalVoices[i]->getSample(channel, sample);
+            }
+            buffer.getWritePointer(channel)[sample] = output * *mainVol/100;
         }
     }
+    
     distMain->setType(*mainDistSel);
     distMain->setInputGain(*mainDAmt / 10.f);
     distMain->setCoeff(*mainDCoeff/100);
@@ -647,7 +636,7 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     auto pcM = juce::dsp::ProcessContextReplacing<float>(blockMain);
     ladderM.setMode(getFilterMode(*mainFilter));
     ladderM.setCutoffFrequencyHz(*mainCutoff);
-    ladderM.setResonance((*mainRes + 1) / 101);
+    ladderM.setResonance((*mainRes + 1.f) / 101.f);
     ladderM.process(pcM);
     
     limiter.setThreshold(*cThresh);
@@ -671,6 +660,16 @@ void CapstoneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             rmsLevelRight.setTargetValue(value);
         else
             rmsLevelRight.setCurrentAndTargetValue(value);
+    }
+    
+    for(int i=0; i<globalVoices.size(); i++) {
+        if(!globalVoices[i]->isActive()) {
+            osc1->deleteVoice(i);
+            osc2->deleteVoice(i);
+            noise->deleteVoice(i);
+            sampler->deleteVoice(i);
+            globalVoices.erase(globalVoices.begin()+i);
+        }
     }
     
     oscilloscope->setBuffer(*mainWaveSlider * 2 + 32);
@@ -753,105 +752,39 @@ void CapstoneAudioProcessor::randomizeParams() {
     //paramsToSkip.push_back(juce::String(""));
     parameterMap.randomize(paramsToSkip);
     setBezier(bezier1, xParam1, yParam1, slopeParam1, points1, 0);
-    
-}
-
-float CapstoneAudioProcessor::getSampleFromBuffers(std::vector<juce::AudioBuffer<float>*>& buffers, int channel, int sample) {
-    float output = 0.f;
-    for(int i=0; i<activeADSRs.size(); i++) {
-        output += buffers[activeADSRs[i]]->getReadPointer(channel)[sample];
-    }
-    return output;
-}
-
-float CapstoneAudioProcessor::getSampleFromSampler(std::vector<juce::AudioBuffer<float>*>& buffers, int channel, int sample) {
-    float output = 0.f;
-    for(int i=0; i<buffers.size(); i++) {
-        output += buffers[i]->getReadPointer(channel)[sample];
-    }
-    return output;
 }
 
 /// These functions are for implementing and applying a global volume envelope to each of the sources and voices
 
-void CapstoneAudioProcessor::applyADSR(std::vector<juce::AudioBuffer<float>*>& buffers) {
-    float envSample = 0;
-    for(int i=0; i<activeADSRs.size(); i++) {
-        envSample = ADSRs[activeADSRs[i]].getNextSample();
-        for(int channel=0; channel<buffers[i]->getNumChannels(); channel++) {
-            auto writePointer = buffers[activeADSRs[i]]->getWritePointer(channel);
-            auto readPointer = buffers[activeADSRs[i]]->getReadPointer(channel);
-            for(int sample=0; sample<buffers[i]->getNumSamples(); sample++) {
-                writePointer[sample] = readPointer[sample] * envSample;
+void CapstoneAudioProcessor::enableADSR(juce::MidiBuffer& midiMessages, int bufChan, int bufSize) {
+    for (const auto midiMessage : midiMessages) {
+        const auto midiEvent = midiMessage.getMessage();
+        int note = midiEvent.getNoteNumber();
+        if(midiEvent.isNoteOn()) {
+            std::unique_ptr<globalVoice> v = std::make_unique<globalVoice>(spec.sampleRate, ADSRparams, note, bufChan, bufSize);
+            globalVoices.push_back(std::move(v));
+            if(globalVoices.size() > 8) {
+                globalVoices.erase(globalVoices.begin());
             }
         }
-    }
-}
-
-void CapstoneAudioProcessor::applyADSRSampler(std::vector<juce::AudioBuffer<float>*>& buffers) {
-    float envSample = 0;
-    for(int i=0; i<buffers.size(); i++) {
-        if(ADSRs[sampler->curPitch[i]].isActive()) {
-            envSample = ADSRs[sampler->curPitch[i]].getNextSample();
-            for(int channel=0; channel<buffers[i]->getNumChannels(); channel++) {
-                auto writePointer = buffers[i]->getWritePointer(channel);
-                auto readPointer = buffers[i]->getReadPointer(channel);
-                for(int sample=0; sample<buffers[i]->getNumSamples(); sample++) {
-                    writePointer[sample] = readPointer[sample] * envSample;
+        if(midiEvent.isNoteOff()) {
+            for(int i=0; i<globalVoices.size(); i++) {
+                if(globalVoices[i]->getPitch() == note && !globalVoices[i]->isRelease()) {
+                    globalVoices[i]->noteOff();
+                    globalVoices[i]->setRelease();
                 }
             }
         }
     }
 }
 
-void CapstoneAudioProcessor::enableADSR(juce::MidiBuffer& midiMessages) {
-    for (const auto midiMessage : midiMessages) {
-        const auto midiEvent = midiMessage.getMessage();
-        const auto note = midiEvent.getNoteNumber();
-        if(midiEvent.isNoteOn()) {
-            if(ADSRs[note].isActive()) {
-                ADSRs[note].noteOff();
-                ADSRs[note+128].noteOn();
-                activeADSRs.push_back(note+128);
-            }
-            else if(ADSRs[note+128].isActive()) {
-                ADSRs[note+128].noteOff();
-                ADSRs[note].noteOn();
-                activeADSRs.push_back(note);
-            }
-            else {
-                ADSRs[note].noteOn();
-                activeADSRs.push_back(note);
-            }
-        }
-        if(midiEvent.isNoteOff()) {
-            if(ADSRs[note+128].isActive()) {
-                ADSRs[note+128].noteOff();
-            }
-            else {
-                ADSRs[note].noteOff();
-            }
-        }
-    }
-}
-
 void CapstoneAudioProcessor::setADSR(float atk, float dec, float sus, float rel) {
-    for(int i=0; i<activeADSRs.size(); i++) {
-        if(!ADSRs[activeADSRs[i]].isActive()) {
-            osc1->setNoteOff(activeADSRs[i]);
-            osc2->setNoteOff(activeADSRs[i]);
-            noise->setNoteOff(activeADSRs[i]);
-            sampler->setNoteOff(activeADSRs[i]);
-            activeADSRs.erase(activeADSRs.begin() + i);
-        }
-    }
-    auto curParams = ADSRs[0].getParameters();
-    if(atk == curParams.attack && dec == curParams.decay && sus == curParams.sustain && rel == curParams.release) return;
-    juce::ADSR::Parameters params(atk, dec, sus, rel);
-    for(int i=0; i<ADSRs.size(); i++) {
+    if(atk == ADSRparams->attack && dec == ADSRparams->decay && sus == ADSRparams->sustain && rel == ADSRparams->release) return;
+    ADSRparams = new juce::ADSR::Parameters(atk, dec, sus, rel);
+    for(int i=0; i<globalVoices.size(); i++) {
         //ADSRs[i].reset();
         // JUCE documentation recommends calling reset() when changing ADSR parameters, but that's lame
-        ADSRs[i].setParameters(params);
+        globalVoices[i]->setADSRParameters(*ADSRparams);
     }
 }
 
@@ -890,3 +823,52 @@ void CapstoneAudioProcessor::setBezier(AuxPort::Bezier* b, juce::AudioParameterF
     b->calcPoints();
     b->drawWaveshaper();
 }
+
+/*
+void CapstoneAudioProcessor::applyADSR(std::vector<juce::AudioBuffer<float>*>& buffers) {
+    float envSample = 0;
+    for(int i=0; i<ADSRs.size(); i++) {
+        envSample = ADSRs[i]->getNextSample();
+        for(int channel=0; channel<buffers[i]->getNumChannels(); channel++) {
+            auto writePointer = buffers[activeADSRs[i]]->getWritePointer(channel);
+            auto readPointer = buffers[activeADSRs[i]]->getReadPointer(channel);
+            for(int sample=0; sample<buffers[i]->getNumSamples(); sample++) {
+                writePointer[sample] = readPointer[sample] * envSample;
+            }
+        }
+    }
+}
+
+void CapstoneAudioProcessor::applyADSRSampler(std::vector<juce::AudioBuffer<float>*>& buffers) {
+    float envSample = 0;
+    for(int i=0; i<buffers.size(); i++) {
+        if(ADSRs[sampler->curPitch[i]].isActive()) {
+            envSample = ADSRs[sampler->curPitch[i]].getNextSample();
+            for(int channel=0; channel<buffers[i]->getNumChannels(); channel++) {
+                auto writePointer = buffers[i]->getWritePointer(channel);
+                auto readPointer = buffers[i]->getReadPointer(channel);
+                for(int sample=0; sample<buffers[i]->getNumSamples(); sample++) {
+                    writePointer[sample] = readPointer[sample] * envSample;
+                }
+            }
+        }
+    }
+}
+ 
+ float CapstoneAudioProcessor::getSampleFromBuffers(std::vector<juce::AudioBuffer<float>*>& buffers, int channel, int sample) {
+     float output = 0.f;
+     for(int i=0; i<activeADSRs.size(); i++) {
+         output += buffers[activeADSRs[i]]->getReadPointer(channel)[sample];
+     }
+     return output;
+ }
+  
+
+ float CapstoneAudioProcessor::getSampleFromSampler(std::vector<juce::AudioBuffer<float>*>& buffers, int channel, int sample) {
+     float output = 0.f;
+     for(int i=0; i<buffers.size(); i++) {
+         output += buffers[i]->getReadPointer(channel)[sample];
+     }
+     return output;
+ }
+*/

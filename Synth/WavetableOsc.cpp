@@ -71,7 +71,7 @@ float WavetableOscillator::getSampleRaw() {
 }
 
 float WavetableOscillator::interpolateLinearly() {
-    const auto truncatedIndex = static_cast<int>(index);
+    const auto truncatedIndex = static_cast<int>(index) % static_cast<int>(wavetable.size());
     const auto nextIndex = (truncatedIndex + 1) % static_cast<int>(wavetable.size());
     const auto nextIndexWeight = index - static_cast<float>(truncatedIndex);
     const auto truncatedIndexWeight = 1.f - nextIndexWeight;

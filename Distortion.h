@@ -28,6 +28,7 @@ class Distortion {
 private:
     Distortion_Type type;
     float inputGain = 0;
+    float setGain = 0;
     float outputGain = 0;
     float mix = 1; // 0 is dry, 1 is wet
     float threshold = 0.8; // for soft clip
@@ -40,6 +41,7 @@ public:
     Distortion(Distortion_Type type, float inputGain, float mix) {
         this->type = type;
         this->inputGain = inputGain;
+        setGain = inputGain;
         this->mix = mix;
     }
     
@@ -52,11 +54,12 @@ public:
     }
     
     void setEnv(float sample, float depth) {
-        inputGain = DBtoLinear((linearToDB(inputGain) * (1-depth)) + (sample * linearToDB(inputGain) * depth));
+        inputGain = DBtoLinear((linearToDB(setGain) * (1-depth)) + ((1+sample) * linearToDB(setGain) * depth));
     }
     
     void setInputGain(float inputGain) {
         this->inputGain = DBtoLinear(inputGain);
+        setGain = this->inputGain;
     }
     
     void setOutputGain(float outputGain) {
@@ -133,6 +136,8 @@ public:
         else if(type == Distortion_Type::bitcrush) {
             sample = mix * outputGain * bitcrush(sample * inputGain) + (1-mix) * sample;
         }
+        if(sample > 1.f) sample = 1.f;
+        else if(sample < -1.f) sample = -1.f;
         return sample;
     }
     

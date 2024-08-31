@@ -14,42 +14,17 @@ namespace Colin {
 
 Sampler::Sampler() {
     formatManager.registerBasicFormats();
-    jucesamplers.resize(NUM_VOICES);
-    envs.resize(NUM_VOICES);
-    TPTs.resize(NUM_VOICES);
-    ladders.resize(NUM_VOICES);
-    for(int i=0; i<NUM_VOICES; i++) {
-        jucesamplers[i] = new juce::Synthesiser;
-        jucesamplers[i]->addVoice(new juce::SamplerVoice());
-        ladders[i] = new juce::dsp::LadderFilter<float>();
-    }
 }
 
 Sampler::~Sampler() {
-    for(int i=0; i<NUM_VOICES; i++) {
-        delete ladders[i];
-        delete jucesamplers[i];
-    }
+    voices.clear();
 }
 
 void Sampler::prepareToPlay(juce::dsp::ProcessSpec spec) {
     this->sampleRate = spec.sampleRate;
-    for(int i=0; i<NUM_VOICES; i++) {
-        jucesamplers[i]->setCurrentPlaybackSampleRate(sampleRate);
-        
-        envs[i].setSampleRate(sampleRate);
-        TPTs[i].reset();
-        TPTs[i].prepare(spec);
-        TPTs[i].setType(juce::dsp::StateVariableTPTFilterType::lowpass);
-        TPTs[i].setCutoffFrequency(curCutoff);
-        TPTs[i].setCutoffFrequency(curRes);
-        ladders[i]->reset();
-        ladders[i]->prepare(spec);
-        ladders[i]->setMode(juce::dsp::LadderFilterMode::LPF12);
-        ladders[i]->setCutoffFrequencyHz(curCutoff);
-        ladders[i]->setResonance(curRes);
-        ladders[i]->setDrive(3.f);
-    }
+    this->spec = spec;
+    dist.setType(Distortion_Type::none);
+    dist.setOutputGain(-3.f);
 }
 
 bool Sampler::isSampleLoaded() {
@@ -71,35 +46,28 @@ void Sampler::setEnvRouting(bool vol, bool dist, bool filt) {
         envToVol = vol;
     }
     if(envToFilter != filt) {
-        if(!envToFilter) {
-            for(int i=0; i<NUM_VOICES; i++) {
-                ladders[i]->setCutoffFrequencyHz(curCutoff);
-                TPTs[i].setCutoffFrequency(curCutoff);
-            }
-        }
         envToFilter = filt;
     }
     envToDist = dist;
 }
 
-void Sampler::setPitch(float pitch, bool re) {
-    this->pitch = pitch;
+void Sampler::setPitch(float p, bool re) {
+    pitch = static_cast<int>(std::roundf(p));
     repitch = re;
+    for(int i=0; i<voices.size(); i++) {
+        voices[i]->setPitchOffset(pitch);
+        voices[i]->setRepitch(repitch);
+    }
 }
 
 void Sampler::loadFile() {
     juce::File f = (juce::File::getSpecialLocation(juce::File::tempDirectory));
-    juce::BigInteger range;
-    range.setRange(0, 128, true);
     juce::FileChooser chooser { "Load a sample", f};
     if(chooser.browseForFileToOpen()) {
         auto file = chooser.getResult();
-        std::unique_ptr<juce::AudioFormatReader> formatReader(formatManager.createReaderFor(file));
+        formatReader.reset(formatManager.createReaderFor(file));
         if (formatReader)
         {
-            for(int i=0; i<NUM_VOICES; i++) {
-                jucesamplers[i]->addSound(new juce::SamplerSound("Sample", *formatReader, range, 60, 0.01, 0.3, 10.0));
-            }
             auto len = static_cast<int>(formatReader->lengthInSamples);
             waveform.setSize(1, len);
             sampleLength = len;
@@ -123,205 +91,110 @@ void Sampler::setNoteOff(int note) {
     }
 }
 
-void Sampler::processBuffers(std::vector<juce::AudioBuffer<float>*>& buffers, juce::MidiBuffer& midiMessages) {
-    if(nextVoice < 0) nextVoice *= -1;
-    if(!repitch || pitch != 0) {
-        //juce::MidiBuffer processedMidi = repitchMessages(midiMessages, repitch);
-        for(int i=0; i<NUM_VOICES; i++) {
-            auto processedMidi = sortMessages(midiMessages, i);
-            const juce::MidiBuffer repitchedMidi = repitchMessages(processedMidi);
-            if(curPitch[i] != -1) {
-                jucesamplers[i]->renderNextBlock(*buffers[i], repitchedMidi, 0, buffers[i]->getNumSamples());
-                curSample[i] += buffers[i]->getNumSamples();
-            }
-        }
+void Sampler::processBuffer(std::unique_ptr<juce::AudioBuffer<float>>& buffer, juce::MidiBuffer& midiMessages, int i) {
+    auto currentSample = 0;
+    //std::unique_ptr<juce::AudioBuffer<float>> temp(new juce::AudioBuffer<float>{buffer->getNumChannels(), buffer->getNumSamples()});
+    for (const auto midiMessage : midiMessages) {
+        const auto midiEvent = midiMessage.getMessage();
+        const auto midiEventSample = static_cast<int>(midiEvent.getTimeStamp());
+        if(voices.size() >= 1) voices[i]->renderVoice(buffer, midiMessages, currentSample, midiEventSample);
+        currentSample = midiEventSample;
+        handleMidiEvent(midiEvent);
     }
-    else {
-        for(int i=0; i<NUM_VOICES; i++) {
-            auto processedMidi = sortMessages(midiMessages, i);
-            if(curPitch[i] != -1) {
-                jucesamplers[i]->renderNextBlock(*buffers[i], processedMidi, 0, buffers[i]->getNumSamples());
-                curSample[i] += buffers[i]->getNumSamples();
-            }
-        }
-    }
-    processVol(buffers);
-    processDist(buffers);
-    processFilters(buffers);
-}
-
-void Sampler::processDist(std::vector<juce::AudioBuffer<float>*>& buffers) {
-    if(distType == 1) return;
-    for (int i=0; i<NUM_VOICES; i++) {
-        if(curPitch[i] != -1) {
-            if(envToDist) {
-                float envSample = envs[i].getNextSample();
-                dist.setEnv(envSample, ADSRDepth);
-                if(!envToVol && !envToFilter) {
-                    for(int j=0; j<buffers[i]->getNumSamples() - 2; j++) {
-                        envSample = envs[i].getNextSample();
-                    }
-                }
-            }
-            if(distType == 2) dist.processBufferWaveshaper(*buffers[i], bezier);
-            else dist.processBuffer(*buffers[i]);
-        }
-    }
-}
-
-void Sampler::processFilters(std::vector<juce::AudioBuffer<float>*>& buffers) {
-    for (int i=0; i<NUM_VOICES; i++) {
-        if(curPitch[i] != -1) {
-            float cutoff = curCutoff;
-            if(keytrack) {
-                float newcutoff = midiToFreq(curPitch[i]) * keytrackAmount + curCutoff;
-                cutoff = newcutoff < 20000 ? newcutoff : 20000;
-                ladders[i]->setCutoffFrequencyHz(cutoff);
-                TPTs[i].setCutoffFrequency(cutoff);
-            }
-            if(envToFilter) {
-                float envSample = envs[i].getNextSample();
-                ladders[i]->setCutoffFrequencyHz((cutoff * (1-ADSRDepth)) + (cutoff * envSample * ADSRDepth));
-                TPTs[i].setCutoffFrequency((cutoff * (1-ADSRDepth)) + (cutoff * envSample * ADSRDepth));
-                if(!envToVol) {
-                    for(int j=0; j<buffers[i]->getNumSamples() - 1; j++) {
-                        envSample = envs[i].getNextSample();
-                    }
-                }
-            }
-            juce::dsp::AudioBlock<float> block(*buffers[i]);
-            auto pc = juce::dsp::ProcessContextReplacing<float>(block);
-            if(type <= 3) TPTs[i].process(pc);
-            else ladders[i]->process(pc);
-        }
-    }
-}
-
-void Sampler::processVol(std::vector<juce::AudioBuffer<float>*>& buffers) {
-    for (int i=0; i<NUM_VOICES; i++) {
-        if(curPitch[i] != -1) {
-            if(envToVol) {
-                float envSample = envs[i].getNextSample();
-                
-                for(int channel=0; channel<buffers[i]->getNumChannels(); channel++) {
-                    auto writePointer = buffers[i]->getWritePointer(channel);
-                    auto readPointer = buffers[i]->getReadPointer(channel);
-                    for(int sample=0; sample<buffers[i]->getNumSamples(); sample++) {
-                        writePointer[sample] = readPointer[sample] * envSample;
-                    }
-                }
-                
-                for(int j=0; j<buffers[0]->getNumSamples()-1; j++) {
-                    envSample = envs[i].getNextSample();
-                }
-            }
-        }
-    }
-}
-
-juce::MidiBuffer Sampler::sortMessages(juce::MidiBuffer& midiMessages, int voice) {
-    juce::MidiBuffer processedMidi;
-    
-    if(curSample[voice] >= sampleLength && curPitch[voice] != -1) {
-        juce::MidiMessage noteOff = juce::MidiMessage::noteOff(1, curPitch[voice], juce::uint8(0));
-        processedMidi.addEvent(noteOff, 1);
-        curSample[voice] = 0;
+    if(curSample[i] >= sampleLength) {
+        juce::MidiMessage noteOff = juce::MidiMessage::noteOff(1, voices[i]->getPitch(), juce::uint8(0));
+        midiMessages.addEvent(noteOff, 1);
+        curSample[i] = 0;
         if(loop) {
-            juce::MidiMessage noteOn = juce::MidiMessage::noteOn(1, curPitch[voice], lastVel[voice]);
-            processedMidi.addEvent(noteOn, 2);
+            juce::MidiMessage noteOn = juce::MidiMessage::noteOn(1, voices[i]->getPitch(), lastVel[i]);
+            midiMessages.addEvent(noteOn, 2);
+        }
+        else {
+            curPitch[i] = -1;
         }
     }
-    
-    for (const auto midiMessage : midiMessages) {
-        const auto midiEvent = midiMessage.getMessage();
-        const auto midiEventSample = static_cast<int>(midiEvent.getTimeStamp());
-        if(midiEvent.isNoteOn()) {
-            if(nextVoice == voice) {
-                if(curPitch[voice] != -1) {
-                    envs[voice].reset();
-                }
-                curPitch[voice] = midiEvent.getNoteNumber();
-                enabled[midiEvent.getNoteNumber()] = 1;
-                processedMidi.addEvent(midiEvent, midiEventSample);
-                envs[voice].noteOn();
-                lastVel[voice] = midiEvent.getVelocity();
-                nextVoice = -1 * ((voice + 2) % 3);
-            }
-        }
-        if(midiEvent.isNoteOff()) {
-            if(curPitch[voice] == midiEvent.getNoteNumber()) {
-                //curPitch[voice] = -1;
-                //processedMidi.addEvent(midiEvent, midiEventSample);
-                envs[voice].noteOff();
-                //enabled[midiEvent.getNoteNumber()] = 0;
-                //lastVel[voice] = 0;
-            }
-        }
-    }
-    return processedMidi;
+    voices[i]->renderVoice(buffer, midiMessages, currentSample, buffer->getNumSamples());
+    processDist(buffer, i);
+    voices[i]->processFilter(buffer);
+    curSample[i] += buffer->getNumSamples();
 }
 
-juce::MidiBuffer Sampler::repitchMessages(juce::MidiBuffer& midiMessages) {
-    juce::MidiBuffer processedMidi;
-    for (const auto midiMessage : midiMessages) {
-        const auto midiEvent = midiMessage.getMessage();
-        const auto midiEventSample = static_cast<int>(midiEvent.getTimeStamp());
-        if(midiEvent.isNoteOn()) {
-            juce::MidiMessage noteOn;
-            if(!repitch) noteOn = juce::MidiMessage::noteOn(midiEvent.getChannel(), 60 + pitch, midiEvent.getVelocity());
-            else noteOn = juce::MidiMessage::noteOn(midiEvent.getChannel(), midiEvent.getNoteNumber() + pitch, midiEvent.getVelocity());
-            processedMidi.addEvent(noteOn, midiEventSample);
+void Sampler::handleMidiEvent(const juce::MidiMessage& midiEvent) {
+    if(midiEvent.isNoteOn()) {
+        const auto note = midiEvent.getNoteNumber();
+        int vel = midiEvent.getVelocity();
+        for(int i=0; i<voices.size(); i++) {
+            if(voices[i]->getPitch() == note && !voices[i]->isRelease()) {
+                return;
+            }
         }
-        if(midiEvent.isNoteOff()) {
-            juce::MidiMessage noteOff;
-            if(!repitch) noteOff = juce::MidiMessage::noteOff(midiEvent.getChannel(), 60 + pitch, midiEvent.getVelocity());
-            else noteOff = juce::MidiMessage::noteOff(midiEvent.getChannel(), midiEvent.getNoteNumber() + pitch, midiEvent.getVelocity());
-            processedMidi.addEvent(noteOff, midiEventSample);
+        std::unique_ptr<SamplerVoice> v = std::make_unique<SamplerVoice>(note, vel);
+        v->prepareToPlay(spec);
+        v->addSound(formatReader);
+        v->setADSR(envParams, ADSRDepth);
+        v->setEnvRouting(envToVol, envToDist, envToFilter);
+        v->setFilter(type, curCutoff, curRes, keytrack, keytrackAmount);
+        v->setLoop(loop);
+        v->setPitchOffset(pitch);
+        v->setRepitch(repitch);
+        v->noteOn();
+        voices.push_back(std::move(v));
+        if(voices.size() > 8) {
+            voices.erase(voices.begin());
+        }
+        lastVel[voices.size()] = vel;
+    }
+    if(midiEvent.isNoteOff()) {
+        const auto note = midiEvent.getNoteNumber();
+        for(int i=0; i<voices.size(); i++) {
+            if(voices[i]->getPitch() == note && !voices[i]->isRelease()) {
+                voices[i]->noteOff();
+                lastVel[i] = 0;
+            }
         }
     }
-    return processedMidi;
+    if(midiEvent.isAllNotesOff()) {
+        for (int i=0; i<voices.size(); i++) {
+            voices[i]->noteOff();
+        }
+    }
+}
+
+void Sampler::deleteVoice(int i) {
+    if(voices.size() == 0) return;
+    int note = voices[i]->getPitch();
+    if(i+1>voices.size()) return;
+    voices.erase(voices.begin()+i);
+    curPitch[i] = -1;
+    enabled[note] = 0;
+    curSample[i] = 0;
+}
+
+void Sampler::processDist(std::unique_ptr<juce::AudioBuffer<float>>& buffer, float envSample) {
+    if(distType == 1) return;
+    if(envToDist) {
+        dist.setEnv(envSample, ADSRDepth);
+    }
+    if(distType == 2) dist.processBufferWaveshaper(*buffer, bezier);
+    else dist.processBuffer(*buffer);
 }
 
 void Sampler::setFilter(int type, float cutoff, float res, bool key, float ktA) {
     this->type = type;
+    curCutoff = cutoff;
+    curRes = res;
     keytrack = key;
     keytrackAmount = ktA;
-    if(type <= 3) {
-        if(type != curTPTMode) {
-            curTPTMode = type;
-            auto t = juce::dsp::StateVariableTPTFilterType::lowpass; // type == 1
-            if(type == 2) t = juce::dsp::StateVariableTPTFilterType::highpass;
-            else if(type == 3) t = juce::dsp::StateVariableTPTFilterType::bandpass;
-            for (int i=0; i<NUM_VOICES; i++) {
-                TPTs[i].setType(t);
-            }
-        }
+    for(int i=0; i<voices.size(); i++) {
+        voices[i]->setFilter(type, cutoff, res, key, ktA);
     }
-    else {
-        if(type != curLadderMode) {
-            curLadderMode = type;
-            auto t = juce::dsp::LadderFilterMode::LPF12; // type == 4
-            if(type == 5) t = juce::dsp::LadderFilterMode::LPF24;
-            else if(type == 6) t = juce::dsp::LadderFilterMode::HPF12;
-            else if(type == 7) t = juce::dsp::LadderFilterMode::HPF24;
-            for (int i=0; i<NUM_VOICES; i++) {
-                ladders[i]->setMode(t);
-            }
-        }
-    }
-    if(cutoff != curCutoff) {
-        curCutoff = cutoff;
-        for (int i=0; i<NUM_VOICES; i++) {
-            TPTs[i].setCutoffFrequency(cutoff);
-            ladders[i]->setCutoffFrequencyHz(cutoff);
-        }
-    }
-    if(res != curRes) {
-        curRes = res;
-        for (int i=0; i<NUM_VOICES; i++) {
-            TPTs[i].setResonance(res);
-            ladders[i]->setResonance(res);
-        }
+}
+
+void Sampler::setLoop(bool isLoop) {
+    if(loop == isLoop) return;
+    loop = isLoop;
+    for(int i=0; i<voices.size(); i++) {
+        voices[i]->setLoop(loop);
     }
 }
 
@@ -333,10 +206,6 @@ void Sampler::setADSR(float atk, float dec, float sus, float rel, float depth) {
     envParams.decay = dec;
     envParams.sustain = sus;
     envParams.release = rel;
-    for(int i=0; i<envs.size(); i++) {
-        envs[i].reset();
-        envs[i].setParameters(envParams);
-    }
 }
 
 float Sampler::midiToFreq(int midiNote)

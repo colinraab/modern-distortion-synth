@@ -33,7 +33,7 @@ void TextSlider::mouseDown(const juce::MouseEvent& e) {
 void TextSlider::mouseDrag(const juce::MouseEvent& e) {
     update(e);
     std::lock_guard<std::mutex> lock(sliderMutex);
-    *param = currentVal;
+    *param = (float)currentVal;
 }
 
 void TextSlider::mouseDoubleClick(const juce::MouseEvent& e) {
@@ -73,7 +73,13 @@ void TextSlider::update(const juce::MouseEvent& e) {
         }
         currentVal = startVal - (difference - oldDiff) * interval;
     }
-    else currentVal = startVal - (difference / 2) * range.interval;
+    else {
+        if(isPitchSlider) {
+            auto dif = (difference / 8) * range.interval;
+            currentVal = startVal - dif;
+        }
+        else currentVal = startVal - (difference / 2) * range.interval;
+    }
     
     if(currentVal <= range.start) currentVal = range.start;
     else if(currentVal >= range.end) currentVal = range.end;
@@ -92,61 +98,61 @@ void TextSlider::update(const juce::MouseEvent& e) {
 void TextSlider::updateText() {
     if(threechar == 1) {
         if(currentVal >= 0 && currentVal < 10) {
-            juce::String text = "00" + std::to_string(static_cast<int>(currentVal));
+            juce::String text = "00" + std::to_string(currentVal);
             textBox.setText(text);
         }
         else if (currentVal >= 10) {
-            juce::String text = "0" + std::to_string(static_cast<int>(currentVal));
+            juce::String text = "0" + std::to_string(currentVal);
             textBox.setText(text);
         }
         else if (currentVal > -10 && currentVal < 0) {
-            juce::String text = std::to_string(static_cast<int>(currentVal * -1));
+            juce::String text = std::to_string(currentVal * -1);
             text = "-0" + text;
             textBox.setText(text);
         }
         else {
-            textBox.setText(std::to_string(static_cast<int>(currentVal)));
+            textBox.setText(std::to_string(currentVal));
         }
     }
     else if(threechar == 2) {
         if (currentVal < 100) {
-            juce::String text = "0" + std::to_string(static_cast<int>(currentVal));
+            juce::String text = "0" + std::to_string(currentVal);
             textBox.setText(text);
         }
         else if (currentVal >= 10000) {
-            int thousands = static_cast<int>(currentVal/1000);
+            int thousands = currentVal/1000;
             juce::String text = std::to_string(thousands) + "k";
             textBox.setText(text);
         }
         else if (currentVal >= 1000) {
-            int thousands = static_cast<int>(currentVal/1000);
+            int thousands = currentVal/1000;
             int hundreds = (currentVal - thousands*1000) / 100;
             juce::String text = std::to_string(thousands) + "k" + std::to_string(hundreds);
             textBox.setText(text);
         }
-        else textBox.setText(std::to_string(static_cast<int>(currentVal)));
+        else textBox.setText(std::to_string(currentVal));
     }
     else if(threechar == 3) {
         if(currentVal >= 0 && currentVal < 10) {
-            juce::String text = "00" + std::to_string(static_cast<int>(currentVal));
+            juce::String text = "00" + std::to_string(currentVal);
             textBox.setText(text);
         }
         else if(currentVal >= 10 && currentVal < 100) {
-            juce::String text = "0" + std::to_string(static_cast<int>(currentVal));
+            juce::String text = "0" + std::to_string(currentVal);
             textBox.setText(text);
         }
-        else textBox.setText(std::to_string(static_cast<int>(currentVal)));
+        else textBox.setText(std::to_string(currentVal));
     }
     else if(threechar == 4) {
-        juce::String text = std::to_string(static_cast<int>(currentVal)) + ":1";
+        juce::String text = std::to_string(currentVal) + ":1";
         textBox.setText(text);
     }
     else {
         if(currentVal >= 0 && currentVal < 10) {
-            juce::String text = "0" + std::to_string(static_cast<int>(currentVal));
+            juce::String text = "0" + std::to_string(currentVal);
             textBox.setText(text);
         }
-        else textBox.setText(std::to_string(static_cast<int>(currentVal)));
+        else textBox.setText(std::to_string(currentVal));
     }
 }
 
@@ -155,7 +161,8 @@ void TextSlider::setText(std::string text) {
 }
 
 void TextSlider::setValue() {
-    currentVal = *param;
+    if(currentVal == std::roundf(*param)) return;
+    currentVal = std::roundf(*param);
     updateText();
 }
 

@@ -68,21 +68,23 @@ class TextSlider : public juce::Component
     void setThreeChar(int isThree);
     void setDistSlider(bool y) { isDistSlider = y; shouldRepaint = true; }
     void setMainSlider(bool y) { isMainSlider = y; shouldRepaint = true; }
+    void setPitchSlider(bool y) { isPitchSlider = y; }
     
   private:
     juce::TextEditor textBox;
     juce::NormalisableRange<float> range;
-    float defaultVal;
-    float startVal;
-    float currentVal;
-    float oldDiff = 0;
-    float interval = 2;
+    int defaultVal;
+    int startVal;
+    int currentVal;
+    int oldDiff = 0;
+    int interval = 2;
     std::mutex sliderMutex;
     juce::AudioParameterFloat* param;
     int threechar = 0; // 0 = 2 char, 1 = three char +/-, 2 = three char
     bool shouldRepaint = false;
     bool isDistSlider = false;
     bool isMainSlider = false;
+    bool isPitchSlider = false;
 };
 
 #endif
