@@ -161,8 +161,8 @@ void TextSlider::setText(std::string text) {
 }
 
 void TextSlider::setValue() {
-    if(currentVal == std::round(*param)) return;
-    currentVal = *param;
+    if(currentVal == std::roundf(*param)) return;
+    currentVal = std::roundf(*param);
     updateText();
 }
 

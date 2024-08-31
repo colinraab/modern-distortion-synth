@@ -195,8 +195,8 @@ void SamplerVoice::setFrequency(float frequency) {
 }
 
 float SamplerVoice::interpolateLinearly() {
-    const auto truncatedIndex = static_cast<int>(index);
-    const auto nextIndex = (truncatedIndex + 1) % static_cast<int>(sample->getNumSamples());
+    const auto truncatedIndex = static_cast<int>(index) % sample->getNumSamples();
+    const auto nextIndex = (truncatedIndex + 1) % sample->getNumSamples();
     const auto nextIndexWeight = index - static_cast<float>(truncatedIndex);
     const auto truncatedIndexWeight = 1.f - nextIndexWeight;
     return truncatedIndexWeight * sample->getSample(0,truncatedIndex) + nextIndexWeight * sample->getSample(0,nextIndex);
