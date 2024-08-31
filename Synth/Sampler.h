@@ -23,7 +23,7 @@ public:
     Sampler();
     ~Sampler();
     void loadFile();
-    void setPitch(float pitch, bool re);
+    void setPitch(float p, bool re);
     void prepareToPlay(juce::dsp::ProcessSpec spec);
     void setFilter(int type, float cutoff, float res, bool key, float ktA);
     void setDistortion(int type, float input, float output, float coeff, float mix, AuxPort::Bezier* b);
@@ -32,7 +32,7 @@ public:
     bool isSampleLoaded();
     void setNoteOff(int note);
     void processBuffers(std::vector<juce::AudioBuffer<float>*>& buffers, juce::MidiBuffer& midiMessages);
-    void processBuffer(juce::AudioBuffer<float>* buffer, juce::MidiBuffer& midiMessages, int i);
+    void processBuffer(std::unique_ptr<juce::AudioBuffer<float>>& buffer, juce::MidiBuffer& midiMessages, int i);
     juce::MidiBuffer repitchMessages(juce::MidiBuffer& midiMessages);
     juce::MidiBuffer sortMessages(juce::MidiBuffer& midiMessages, int voice);
     juce::AudioBuffer<float>& getWaveform() { return waveform; }
@@ -47,33 +47,22 @@ public:
     
 private:
     bool sampleLoaded = false;
-    //void processDist(std::vector<juce::AudioBuffer<float>*>& buffers);
-    void processDist(juce::AudioBuffer<float>* buffer, float envSample);
-    //void processFilters(std::vector<juce::AudioBuffer<float>*>& buffers);
-    void processFilters(juce::AudioBuffer<float>* buffer, int i);
-    //void processVol(std::vector<juce::AudioBuffer<float>*>& buffers);
-    //void processVol(juce::AudioBuffer<float>* buffer, int i);
-    //void getEnvSamples(int numSamples, int i);
+    void processDist(std::unique_ptr<juce::AudioBuffer<float>>& buffer, float envSample);
+    void processFilters(std::unique_ptr<juce::AudioBuffer<float>>& buffer, int i);
     void handleMidiEvent(const juce::MidiMessage& midiEvent);
 
-    
     juce::dsp::ProcessSpec spec;
     std::vector<std::unique_ptr<SamplerVoice>> voices;
 
-    //std::unique_ptr<juce::AudioFormatReader> formatReader;
-    juce::AudioFormatReader* formatReader;
+    std::unique_ptr<juce::AudioFormatReader> formatReader;
     
     float midiToFreq(int midiNote);
     std::vector<juce::Synthesiser*> jucesamplers;
     juce::AudioFormatManager formatManager;
     double sampleRate = 44100;
-    float pitch = 0.f;
+    int pitch = 0;
     juce::AudioBuffer<float> waveform;
-    //std::vector<juce::ADSR> envs;
     juce::ADSR::Parameters envParams;
-    //std::vector<juce::dsp::StateVariableTPTFilter<float>> TPTs;
-    //std::vector<juce::dsp::LadderFilter<float>*> ladders;
-    //int voices = 0;
     bool keytrack = false;
     float keytrackAmount = 1;
     float ADSRDepth = 0.f;
@@ -92,10 +81,6 @@ private:
     juce::uint8 lastVel[NUM_VOICES] = {0};
     int curSample[NUM_VOICES] = {0};
     AuxPort::Bezier* bezier;
-    
-    //float envSampleStart = 0.f;
-    //float envSampleEnd = 0.f;
-    //bool cycleEnv [NUM_VOICES] = {false};
 };
 
 }

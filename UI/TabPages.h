@@ -128,6 +128,7 @@ struct Osc1Page : public juce::Component
         osc1Pitch->setThreeChar(1);
         osc1Pitch->setRange(-24, 24, 0, 1);
         osc1Pitch->setBounds(25, 155, 50, 50);
+        osc1Pitch->setPitchSlider(true);
         addAndMakeVisible(osc1Pitch);
         
         osc1Cutoff = new TextSlider(cutoff);
@@ -556,6 +557,7 @@ struct Osc2Page : public juce::Component
         osc2Pitch->setThreeChar(1);
         osc2Pitch->setRange(-24, 24, 0, 1);
         osc2Pitch->setBounds(25, 155, 50, 50);
+        osc2Pitch->setPitchSlider(true);
         addAndMakeVisible(osc2Pitch);
         
         osc2Cutoff = new TextSlider(cutoff);
@@ -1028,7 +1030,7 @@ struct NoisePage : public juce::Component
         
         noiseCutoff = new TextSlider(cutoff);
         noiseCutoff->setThreeChar(2);
-        noiseCutoff->setRange(0, 20000, 20000, 1, 15);
+        noiseCutoff->setRange(20, 20000, 20000, 1, 15);
         noiseCutoff->setBounds(290, 40, 50, 50);
         noiseCutoff->setValue();
         addAndMakeVisible(noiseCutoff);
@@ -1382,6 +1384,7 @@ struct SamplerPage : public juce::Component
         samplerPitch->setRange(-24, 24, 0, 1);
         samplerPitch->setBounds(25, 155, 50, 50);
         samplerPitch->setValue();
+        samplerPitch->setPitchSlider(true);
         addAndMakeVisible(samplerPitch);
         
         samplerDrive = new TextSlider(drive);

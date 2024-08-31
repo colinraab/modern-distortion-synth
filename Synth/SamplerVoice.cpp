@@ -12,22 +12,21 @@
 
 namespace Colin {
 
-SamplerVoice::SamplerVoice(int pitch) {
+SamplerVoice::SamplerVoice(int pitch, int vel) {
     this->pitch = pitch;
+    this->vel = vel;
+    sample = new juce::AudioBuffer<float>();
     ladder = new juce::dsp::LadderFilter<float>();
-    jucesampler = new juce::Synthesiser;
-    jucesampler->addVoice(new juce::SamplerVoice());
 }
 
 SamplerVoice::~SamplerVoice() {
-    delete jucesampler;
     delete ladder;
+    delete sample;
 }
 
 void SamplerVoice::prepareToPlay(juce::dsp::ProcessSpec spec)
 {
     sampleRate = spec.sampleRate;
-    jucesampler->setCurrentPlaybackSampleRate(sampleRate);
     env.setSampleRate(sampleRate);
     TPT.reset();
     TPT.prepare(spec);
@@ -42,18 +41,18 @@ void SamplerVoice::prepareToPlay(juce::dsp::ProcessSpec spec)
     ladder->setDrive(3.f);
 }
 
-void SamplerVoice::addSound(juce::AudioFormatReader* formatReader) {
-    juce::BigInteger range;
-    range.setRange(0, 128, true);
-    jucesampler->addSound(new juce::SamplerSound("Sample", *formatReader, range, 60, 0.01, 0.3, 10.0));
+void SamplerVoice::addSound(std::unique_ptr<juce::AudioFormatReader>& formatReader) {
+    sample->setSize(2, formatReader->lengthInSamples);
+    formatReader->read(sample, 0, formatReader->lengthInSamples, 0, true, true);
+    sampleSampleRate = formatReader->sampleRate;
+    setFrequency(midiToFreq(pitch + pitchOffset));
 }
 
-void SamplerVoice::renderVoice(juce::AudioBuffer<float>* buffer, juce::MidiBuffer& midiMessages, int startSample, int endSample) {
+void SamplerVoice::renderVoice(std::unique_ptr<juce::AudioBuffer<float>>& buffer, juce::MidiBuffer& midiMessages, int startSample, int endSample) {
     if(!active) return;
         
     if(!env.isActive()) {
         if(envToVol) {
-            // DO SOMETHING
             active = false;
             return;
         }
@@ -61,7 +60,14 @@ void SamplerVoice::renderVoice(juce::AudioBuffer<float>* buffer, juce::MidiBuffe
     
     getEnvSamples(buffer->getNumSamples());
     
-    jucesampler->renderNextBlock(*buffer, midiMessages, startSample, endSample);
+    auto* firstChannel = buffer->getWritePointer(0);
+
+    for (auto sample = startSample; sample < endSample; sample++) {
+        firstChannel[sample] += getSample() * normVelocity(vel);
+    }
+    for (auto channel = 1; channel < buffer->getNumChannels(); channel++) {
+        std::copy(firstChannel + startSample, firstChannel + endSample, buffer->getWritePointer(channel) + startSample);
+    }
     
     if(envToVol) {
         buffer->applyGainRamp(0, buffer->getNumSamples(), envSampleStart, envSampleEnd);
@@ -70,7 +76,7 @@ void SamplerVoice::renderVoice(juce::AudioBuffer<float>* buffer, juce::MidiBuffe
 
 void SamplerVoice::setFilter(int type, float cutoff, float res, bool key, float ktA) {
     keytrack = key;
-    keytrackAmount = ktA;
+    keytrackAmount = (ktA + 1) / 100;
     filterType = type;
     if(type <= 3) {
         if(type != curTPTMode) {
@@ -113,10 +119,10 @@ float SamplerVoice::midiToFreq(int midiNote)
     constexpr float A4_FREQ = 440;
     constexpr float A4_MIDINOTE = 69;
     constexpr float NOTES_IN_OCTAVE = 12.f;
-    return A4_FREQ * std::powf(2, (static_cast<float>(midiNote) - A4_MIDINOTE + pitch) / NOTES_IN_OCTAVE);
+    return A4_FREQ * std::powf(2, (static_cast<float>(midiNote) - A4_MIDINOTE) / NOTES_IN_OCTAVE);
 }
 
-void SamplerVoice::processFilter(juce::AudioBuffer<float>* buffer) {
+void SamplerVoice::processFilter(std::unique_ptr<juce::AudioBuffer<float>>& buffer) {
     if(!active) return;
     float cutoff = curCutoff;
     if(keytrack) {
@@ -126,7 +132,6 @@ void SamplerVoice::processFilter(juce::AudioBuffer<float>* buffer) {
         TPT.setCutoffFrequency(cutoff);
     }
     if(envToFilter) {
-        //float envSample = env.getNextSample();
         ladder->setCutoffFrequencyHz((cutoff * (1-ADSRDepth)) + (cutoff * envSampleStart * ADSRDepth));
         TPT.setCutoffFrequency((cutoff * (1-ADSRDepth)) + (cutoff * envSampleStart * ADSRDepth));
     }
@@ -148,7 +153,6 @@ void SamplerVoice::getEnvSamples(int numSamples) {
         env.getNextSample();
     }
     envSampleEnd = env.getNextSample();
-    //cycleEnv = true;
 }
 
 float SamplerVoice::returnEnvSample() {
@@ -172,8 +176,49 @@ int SamplerVoice::getPitch() {
     return pitch;
 }
 
+void SamplerVoice::setPitchOffset(int offset) {
+    if(pitchOffset == offset) return;
+    pitchOffset = offset;
+    setFrequency(midiToFreq(pitch + pitchOffset));
+}
+
 void SamplerVoice::setLoop(bool isLoop) {
     loop = isLoop;
+}
+
+float SamplerVoice::normVelocity(int vel) {
+    return (vel / 160.f) + 0.2f;
+}
+
+void SamplerVoice::setFrequency(float frequency) {
+    indexIncrement = (frequency / 440.0) * sampleSampleRate / static_cast<float>(sampleRate);
+}
+
+float SamplerVoice::interpolateLinearly() {
+    const auto truncatedIndex = static_cast<int>(index);
+    const auto nextIndex = (truncatedIndex + 1) % static_cast<int>(sample->getNumSamples());
+    const auto nextIndexWeight = index - static_cast<float>(truncatedIndex);
+    const auto truncatedIndexWeight = 1.f - nextIndexWeight;
+    return truncatedIndexWeight * sample->getSample(0,truncatedIndex) + nextIndexWeight * sample->getSample(0,nextIndex);
+}
+
+float SamplerVoice::getSample() {
+    if(static_cast<int>(index + 2) > sample->getNumSamples() && loop == false) {
+        active = false;
+        return 0.f;
+    }
+    auto newSample = interpolateLinearly();
+    index += indexIncrement;
+    index = std::fmod(index, static_cast<float>(sample->getNumSamples()));
+    return newSample;
+}
+
+void SamplerVoice::setRepitch(bool shouldRepitch) {
+    repitch = shouldRepitch;
+    if(!repitch) {
+        // middle C = 60
+        setFrequency(midiToFreq(60+pitchOffset));
+    }
 }
 
 }

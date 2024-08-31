@@ -27,10 +27,10 @@
 class globalVoice {
 public:
     globalVoice(double sampleRate, juce::ADSR::Parameters* params, int pitch, int bufChan, int bufSize) {
-        osc1Buffer = new juce::AudioBuffer<float>(bufChan,bufSize);
-        osc2Buffer = new juce::AudioBuffer<float>(bufChan,bufSize);
-        noiseBuffer = new juce::AudioBuffer<float>(bufChan,bufSize);
-        samplerBuffer = new juce::AudioBuffer<float>(bufChan,bufSize);
+        osc1Buffer.reset(new juce::AudioBuffer<float>(bufChan,bufSize));
+        osc2Buffer.reset(new juce::AudioBuffer<float>(bufChan,bufSize));
+        noiseBuffer.reset(new juce::AudioBuffer<float>(bufChan,bufSize));
+        samplerBuffer.reset(new juce::AudioBuffer<float>(bufChan,bufSize));
         osc1Buffer->clear();
         osc2Buffer->clear();
         noiseBuffer->clear();
@@ -43,25 +43,25 @@ public:
     }
     
     ~globalVoice() {
-        delete osc1Buffer;
-        delete osc2Buffer;
-        delete noiseBuffer;
-        delete samplerBuffer;
+        osc1Buffer->clear();
+        osc2Buffer->clear();
+        noiseBuffer->clear();
+        samplerBuffer->clear();
     }
     
-    juce::AudioBuffer<float>* getOsc1() {
+    std::unique_ptr<juce::AudioBuffer<float>>& getOsc1() {
         return osc1Buffer;
     }
     
-    juce::AudioBuffer<float>* getOsc2() {
+    std::unique_ptr<juce::AudioBuffer<float>>& getOsc2() {
         return osc2Buffer;
     }
     
-    juce::AudioBuffer<float>* getNoise() {
+    std::unique_ptr<juce::AudioBuffer<float>>& getNoise() {
         return noiseBuffer;
     }
     
-    juce::AudioBuffer<float>* getSampler() {
+    std::unique_ptr<juce::AudioBuffer<float>>& getSampler() {
         return samplerBuffer;
     }
     
@@ -128,10 +128,10 @@ public:
         samplerVol = sampler;
     }
 private:
-    juce::AudioBuffer<float>* osc1Buffer;
-    juce::AudioBuffer<float>* osc2Buffer;
-    juce::AudioBuffer<float>* noiseBuffer;
-    juce::AudioBuffer<float>* samplerBuffer;
+    std::unique_ptr<juce::AudioBuffer<float>> osc1Buffer;
+    std::unique_ptr<juce::AudioBuffer<float>> osc2Buffer;
+    std::unique_ptr<juce::AudioBuffer<float>> noiseBuffer;
+    std::unique_ptr<juce::AudioBuffer<float>> samplerBuffer;
     juce::ADSR adsr;
     int pitch = 0;
     bool release = false;

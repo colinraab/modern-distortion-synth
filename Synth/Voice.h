@@ -50,9 +50,9 @@ public:
     void setVol(float v);
     
     float renderNoise();
-    void renderVoice(juce::AudioBuffer<float>* buffer, int startSample, int endSample);
-    void renderVoiceFM(juce::AudioBuffer<float>* carrierBuffer, juce::AudioBuffer<float>* modBuffer, int startSample, int endSample, float depth);
-    void processFilter(juce::AudioBuffer<float>* buffer);
+    void renderVoice(std::unique_ptr<juce::AudioBuffer<float>>& buffer, int startSample, int endSample);
+    void renderVoiceFM(std::unique_ptr<juce::AudioBuffer<float>>& carrierBuffer, std::unique_ptr<juce::AudioBuffer<float>>& modBuffer, int startSample, int endSample, float depth);
+    void processFilter(std::unique_ptr<juce::AudioBuffer<float>>& buffer);
     float midiToFreq(int midiNote);
     bool isRelease();
     

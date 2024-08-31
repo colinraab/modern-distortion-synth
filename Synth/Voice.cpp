@@ -151,7 +151,7 @@ float Voice::normVelocity(int vel) {
 
 void Voice::setFilter(int type, float cutoff, float res, bool key, float ktA) {
     keytrack = key;
-    keytrackAmount = ktA;
+    keytrackAmount = (ktA + 1) / 100; // change range from 0-99 to 0.0-1.0
     filterType = type;
     if(type <= 3) {
         if(type != curTPTMode) {
@@ -219,7 +219,7 @@ float Voice::renderNoise() {
     }
 }
 
-void Voice::renderVoice(juce::AudioBuffer<float>* buffer, int startSample, int endSample) {
+void Voice::renderVoice(std::unique_ptr<juce::AudioBuffer<float>>& buffer, int startSample, int endSample) {
     if(!active) return;
     
     auto* firstChannel = buffer->getWritePointer(0);
@@ -260,7 +260,7 @@ void Voice::renderVoice(juce::AudioBuffer<float>* buffer, int startSample, int e
     }
 }
 
-void Voice::renderVoiceFM(juce::AudioBuffer<float>* carrierBuffer, juce::AudioBuffer<float>* modBuffer, int startSample, int endSample, float depth) {
+void Voice::renderVoiceFM(std::unique_ptr<juce::AudioBuffer<float>>& carrierBuffer, std::unique_ptr<juce::AudioBuffer<float>>& modBuffer, int startSample, int endSample, float depth) {
     if(!active) return;
     
     auto* firstChannel = carrierBuffer->getWritePointer(0);
@@ -301,10 +301,10 @@ float Voice::midiToFreq(int midiNote)
     constexpr float A4_FREQ = 440;
     constexpr float A4_MIDINOTE = 69;
     constexpr float NOTES_IN_OCTAVE = 12.f;
-    return A4_FREQ * std::powf(2, (static_cast<float>(midiNote) - A4_MIDINOTE + pitch) / NOTES_IN_OCTAVE);
+    return A4_FREQ * std::powf(2, (static_cast<float>(midiNote) - A4_MIDINOTE + pitchOffset) / NOTES_IN_OCTAVE);
 }
 
-void Voice::processFilter(juce::AudioBuffer<float>* buffer) {
+void Voice::processFilter(std::unique_ptr<juce::AudioBuffer<float>>& buffer) {
     if(!active) return;
     float cutoff = curCutoff;
     if(keytrack) {

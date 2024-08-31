@@ -32,43 +32,23 @@ public:
     void setKeytrack(bool key);
     void setPitch(float pitch);
     void setFilter(int type, float cutoff, float res, bool key, float ktA);
-    void processBuffer(juce::AudioBuffer<float>*, juce::MidiBuffer&, int i);
-    void processBufferFM(juce::AudioBuffer<float>*, juce::AudioBuffer<float>*, juce::MidiBuffer&, int i);
+    void processBuffer(std::unique_ptr<juce::AudioBuffer<float>>&, juce::MidiBuffer&, int i);
+    void processBufferFM(std::unique_ptr<juce::AudioBuffer<float>>&, std::unique_ptr<juce::AudioBuffer<float>>&, juce::MidiBuffer&, int i);
     void setADSR(float atk, float dec, float sus, float rel, float depth);
     void deleteVoice(int i);
     void setOscVol(float newVol) { oscVol = newVol; }
-
-    /*
-    void processBlock(juce::dsp::AudioBlock<float>&, juce::MidiBuffer&);
-    void processBuffers(std::vector<juce::AudioBuffer<float>*>&, juce::MidiBuffer&);
-    void processBlockFM(juce::dsp::AudioBlock<float>&, juce::dsp::AudioBlock<float>&, juce::MidiBuffer&);
-    void processBuffersFM(std::vector<juce::AudioBuffer<float>*>&, std::vector<juce::AudioBuffer<float>*>&, juce::MidiBuffer&);
-    void setNoteOff(int note);
-     */
     
 private:
     void initializeVoices();
     std::vector<std::unique_ptr<Voice>> voices;
     juce::dsp::ProcessSpec spec;
     float FMdepth = 0.f;
-    float pitch = 0.f;
+    int pitchOffset = 0;
 
-    
-    void processDist(juce::AudioBuffer<float>*, int i);
+    void processDist(std::unique_ptr<juce::AudioBuffer<float>>&, int i);
     void handleMidiEvent(const juce::MidiMessage& midiEvent);
     float midiToFreq(int midiNote);
     void updateFreqs();
-    
-    /*
-    void render(juce::dsp::AudioBlock<float>&, int, int);
-    void render(juce::AudioBuffer<float>&, int, int);
-    void renderBuffers(std::vector<juce::AudioBuffer<float>*>&, int, int);
-    float renderNoise();
-    void renderFM(juce::dsp::AudioBlock<float>&, juce::dsp::AudioBlock<float>&, int, int);
-    void renderFM(std::vector<juce::AudioBuffer<float>*>&, std::vector<juce::AudioBuffer<float>*>&, int, int);
-    void processFilters(std::vector<juce::AudioBuffer<float>*>&);
-    void processDist(std::vector<juce::AudioBuffer<float>*>&);
-    */
 
     uint32 sampleRate;
     Oscillator_Type oscType = Oscillator_Type::sine;
@@ -91,15 +71,6 @@ private:
     float prevHPNoiseSample = 0;
     float prevLPNoiseSample = 0;
     AuxPort::Bezier* bezier;
-    
-    /*
-    std::list<int> curVoices;
-    std::vector<juce::dsp::StateVariableTPTFilter<float>> TPTs;
-    std::vector<juce::dsp::LadderFilter<float>*> ladders;
-    std::vector<bool> noiseIsPlaying;
-    std::vector<juce::ADSR> envs;
-    std::vector<WavetableOscillator> oscillators;
-    */
 };
      
 

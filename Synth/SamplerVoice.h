@@ -18,30 +18,42 @@ namespace Colin
 
 class SamplerVoice {
 public:
-    SamplerVoice(int pitch);
+    SamplerVoice(int pitch, int vel);
     ~SamplerVoice();
     void prepareToPlay(juce::dsp::ProcessSpec spec);
-    //void renderVoice(juce::AudioBuffer<float>* buffer, juce::MidiBuffer& midiMessages);
-    void renderVoice(juce::AudioBuffer<float>* buffer, juce::MidiBuffer& midiMessages, int startSample, int endSample);
+    void renderVoice(std::unique_ptr<juce::AudioBuffer<float>>& buffer, juce::MidiBuffer& midiMessages, int startSample, int endSample);
     void setFilter(int type, float cutoff, float res, bool key, float ktA);
     void setEnvRouting(bool v, bool d, bool f);
-    void processFilter(juce::AudioBuffer<float>* buffer);
+    void processFilter(std::unique_ptr<juce::AudioBuffer<float>>& buffer);
     void setADSR(juce::ADSR::Parameters envParams, float depth);
     void noteOn();
     void noteOff();
     bool isRelease();
     int getPitch();
+    void setPitchOffset(int offset);
     void getEnvSamples(int numSamples);
-    void addSound(juce::AudioFormatReader* formatReader);
+    void addSound(std::unique_ptr<juce::AudioFormatReader>& formatReader);
     void setLoop(bool isLoop);
     float returnEnvSample();
+    void setRepitch(bool shouldRepitch);
     
 private:
     float midiToFreq(int midiNote);
+    float normVelocity(int vel);
+    void setFrequency(float frequency);
+    float interpolateLinearly();
+    float getSample();
     
-    juce::Synthesiser* jucesampler;
+    juce::AudioBuffer<float>* sample;
+    float index = 0.f;
+    float prevSample = 0.f;
+    float indexIncrement = 0.f;
+    
     float sampleRate;
+    float sampleSampleRate;
     int pitch;
+    int pitchOffset = 0;
+    bool repitch = true;
     int vel;
     bool active = true;
     bool noise = false;

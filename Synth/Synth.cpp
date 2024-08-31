@@ -12,9 +12,7 @@
 
 namespace Colin  {
 
-Synth::Synth() {
-    //default
-}
+Synth::Synth() {}
 
 Synth::~Synth() {
     voices.clear();
@@ -123,8 +121,9 @@ void Synth::setKeytrack(bool key) {
 }
 
 void Synth::setPitch(float pitch) {
-    if(this->pitch != pitch) {
-        this->pitch = pitch;
+    int p = static_cast<int>(std::roundf(pitch));
+    if(pitchOffset != p) {
+        pitchOffset = p;
         updateFreqs();
     }
 }
@@ -140,7 +139,7 @@ void Synth::setFilter(int type, float cutoff, float res, bool key, float ktA) {
     }
 }
 
-void Synth::processBuffer(juce::AudioBuffer<float>* buffer, juce::MidiBuffer& midiMessages, int i)
+void Synth::processBuffer(std::unique_ptr<juce::AudioBuffer<float>>& buffer, juce::MidiBuffer& midiMessages, int i)
 {
     auto currentSample = 0;
     for (const auto midiMessage : midiMessages) {
@@ -156,7 +155,7 @@ void Synth::processBuffer(juce::AudioBuffer<float>* buffer, juce::MidiBuffer& mi
     voices[i]->processFilter(buffer);
 }
 
-void Synth::processBufferFM(juce::AudioBuffer<float>* carrierBuffer, juce::AudioBuffer<float>* modBuffer, juce::MidiBuffer& midiMessages, int i)
+void Synth::processBufferFM(std::unique_ptr<juce::AudioBuffer<float>>& carrierBuffer, std::unique_ptr<juce::AudioBuffer<float>>& modBuffer, juce::MidiBuffer& midiMessages, int i)
 {
     auto currentSample = 0;
     for (const auto midiMessage : midiMessages) {
@@ -190,7 +189,7 @@ void Synth::setADSR(float atk, float dec, float sus, float rel, float depth) {
     }
 }
 
-void Synth::processDist(juce::AudioBuffer<float>* buffer, int i) {
+void Synth::processDist(std::unique_ptr<juce::AudioBuffer<float>>& buffer, int i) {
     if(distType == 1) return;
     if(envToDist) {
         float envSample = voices[i]->getEnvSample();
@@ -205,12 +204,12 @@ float Synth::midiToFreq(int midiNote)
     constexpr float A4_FREQ = 440;
     constexpr float A4_MIDINOTE = 69;
     constexpr float NOTES_IN_OCTAVE = 12.f;
-    return A4_FREQ * std::powf(2, (static_cast<float>(midiNote) - A4_MIDINOTE + pitch) / NOTES_IN_OCTAVE);
+    return A4_FREQ * std::powf(2, (static_cast<float>(midiNote) - A4_MIDINOTE + pitchOffset) / NOTES_IN_OCTAVE);
 }
 
 void Synth::updateFreqs() {
     for(int i=0; i<voices.size(); i++) {
-        voices[i]->setPitch(static_cast<int>(pitch));
+        voices[i]->setPitch(static_cast<int>(pitchOffset));
     }
 }
 
@@ -231,7 +230,7 @@ void Synth::handleMidiEvent(const juce::MidiMessage& midiEvent) {
         v->setADSR(envParams, ADSRDepth);
         v->setEnvRouting(envToVol, envToDist, envToFilter);
         v->setFilter(filterType, curCutoff, curRes, keytrack, keytrackAmount);
-        v->setPitch(pitch);
+        v->setPitch(pitchOffset);
         v->noteOn();
         voices.push_back(std::move(v));
         if(voices.size() > 8) {
@@ -252,206 +251,5 @@ void Synth::handleMidiEvent(const juce::MidiMessage& midiEvent) {
         }
     }
 }
-
-
-
-
-
-
-//-------------------------------------------------
-/*
- 
- void Synth::renderBuffers(std::vector<juce::AudioBuffer<float>*>& buffers, int startSample, int endSample) {
-     for(int i=0; i<voices.size(); i++) {
-         voices[i]->renderVoice(buffers[i], startSample, endSample);
-     }
- }
- 
- void Synth::processBuffersFM(std::vector<juce::AudioBuffer<float>*>& carrierBuffers, std::vector<juce::AudioBuffer<float>*>& modBuffers, juce::MidiBuffer& midiMessages)
- {
-     auto currentSample = 0;
-     for (const auto midiMessage : midiMessages) {
-         const auto midiEvent = midiMessage.getMessage();
-         const auto midiEventSample = static_cast<int>(midiEvent.getTimeStamp());
-         renderFM(carrierBuffers, modBuffers, currentSample, midiEventSample);
-         currentSample = midiEventSample;
-         handleMidiEvent(midiEvent);
-     }
-     renderFM(carrierBuffers, modBuffers, currentSample, carrierBuffers[0]->getNumSamples());
-     processDist(carrierBuffers);
-     //processFilters(carrierBuffers);
- }
- 
- void Synth::renderFM(std::vector<juce::AudioBuffer<float>*>& carrierBuffers, std::vector<juce::AudioBuffer<float>*>& modBuffers, int startSample, int endSample) {
-     for (int i=0; i<oscillators.size(); i++) {
-         if(oscillators[i].isPlaying()) {
-             if(!envs[i].isActive()) {
-                 if(envToVol) {
-                     oscillators[i].stop();
-                     curVoices.remove(i);
-                     continue;
-                 }
-             }
-             auto* firstChannel = carrierBuffers[i]->getWritePointer(0);
-             for (auto sample = startSample; sample < endSample; sample++) {
-                 if(envToVol) {
-                     float envSample = envs[i].getNextSample();
-                     float fmSample = modBuffers[i]->getReadPointer(0)[sample];
-                     //oscillators[i].setFM(fmSample * FMdepth * oscillators[i].getFrequency());
-                     oscillators[i].setPM(fmSample * FMdepth);
-                     firstChannel[sample] += oscillators[i].getSample() * envSample * oscVol;
-                 }
-                 else {
-                     float fmSample = modBuffers[i]->getReadPointer(0)[sample];
-                     oscillators[i].setPM(fmSample * FMdepth);
-                     firstChannel[sample] += oscillators[i].getSample() * oscVol;
-                 }
-             }
-             for (auto channel = 1; channel < carrierBuffers[i]->getNumChannels(); channel++) {
-                 std::copy(firstChannel + startSample, firstChannel + endSample, carrierBuffers[i]->getWritePointer(channel) + startSample);
-             }
-         }
-     }
- }
- 
- void Synth::processBuffers(std::vector<juce::AudioBuffer<float>*>& buffers, juce::MidiBuffer& midiMessages)
- {
-     auto currentSample = 0;
-     for (const auto midiMessage : midiMessages) {
-         const auto midiEvent = midiMessage.getMessage();
-         const auto midiEventSample = static_cast<int>(midiEvent.getTimeStamp());
-         renderBuffers(buffers, currentSample, midiEventSample);
-         currentSample = midiEventSample;
-         handleMidiEvent(midiEvent);
-     }
-     renderBuffers(buffers, currentSample, buffers[0]->getNumSamples());
-     processDist(buffers);
-     for(int i=0; i<voices.size(); i++) {
-         voices[i]->processFilter(buffers[i]);
-     }
- }
- 
- void Synth::processDist(std::vector<juce::AudioBuffer<float>*>& buffers) {
-     if(distType == 1) return;
-     for(int i=0; i<voices.size(); i++) {
-         if(envToDist) {
-             float envSample = voices[i]->getEnvSample();
-             dist.setEnv(envSample, ADSRDepth);
-             if(!envToVol && !envToFilter) {
-                 for(int j=0; j<buffers[i]->getNumSamples() - 2; j++) {
-                     envSample = voices[i]->getEnvSample();
-                 }
-             }
-         }
-         if(distType == 2) dist.processBufferWaveshaper(*buffers[i], bezier);
-         else dist.processBuffer(*buffers[i]);
-     }
- }
- 
- void Synth::setNoteOff(int note) {
-     if(oscillators[note].isPlaying()) {
-         oscillators[note].stop();
-         curVoices.remove(note);
-         noiseIsPlaying[note] = false;
-     }
-     else if(oscillators[note+128].isPlaying()) {
-         oscillators[note+128].stop();
-         curVoices.remove(note+128);
-         noiseIsPlaying[note+128] = false;
-     }
- }
- 
- 
-void Synth::processBuffer(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
-{
-    auto currentSample = 0;
-    for (const auto midiMessage : midiMessages) {
-        const auto midiEvent = midiMessage.getMessage();
-        const auto midiEventSample = static_cast<int>(midiEvent.getTimeStamp());
-        //if(isNoise) renderNoise(buffer, currentSample, midiEventSample);
-        render(buffer, currentSample, midiEventSample);
-        currentSample = midiEventSample;
-        handleMidiEvent(midiEvent);
-    }
-    //if(isNoise) renderNoise(buffer, currentSample, buffer.getNumSamples());
-    render(buffer, currentSample, buffer.getNumSamples());
-}
-
-void Synth::render(juce::AudioBuffer<float>& buffer, int startSample, int endSample) {
-    auto* firstChannel = buffer.getWritePointer(0);
-    for (int i=0; i<oscillators.size(); i++) {
-        if(oscillators[i].isPlaying()) {
-            if(!envs[i].isActive()) {
-                oscillators[i].stop();
-                continue;
-            }
-            for (auto sample = startSample; sample < endSample; sample++) {
-                float envSample = envs[i].getNextSample();
-                firstChannel[sample] += TPTs[i].processSample(0, oscillators[i].getSample() * envSample * 0.2);
-            }
-        }
-    }
-    for (auto channel = 1; channel < buffer.getNumChannels(); channel++) {
-        std::copy(firstChannel + startSample, firstChannel + endSample, buffer.getWritePointer(channel) + startSample);
-    }
-}
-
-void Synth::renderFM(juce::dsp::AudioBlock<float>& block, juce::dsp::AudioBlock<float>& modBlock, int startSample, int endSample) {
-    auto* firstChannel = block.getChannelPointer(0);
-    auto* firstChannelMod = modBlock.getChannelPointer(0);
-    for (auto& oscillator : oscillators) {
-        if(oscillator.isPlaying()) {
-            for (auto sample = startSample; sample < endSample; sample++) {
-                oscillator.setFM(firstChannelMod[sample]);
-                firstChannel[sample] += oscillator.getSample() * 0.2;
-            }
-        }
-    }
-    for (auto channel = 1; channel < block.getNumChannels(); channel++) {
-        std::copy(firstChannel + startSample, firstChannel + endSample, block.getChannelPointer(channel) + startSample);
-    }
-}
-
-void Synth::processBlockFM(juce::dsp::AudioBlock<float>& block, juce::dsp::AudioBlock<float>& modBlock, juce::MidiBuffer& midiMessages)
-{
-    auto currentSample = 0;
-    for (const auto midiMessage : midiMessages) {
-        const auto midiEvent = midiMessage.getMessage();
-        const auto midiEventSample = static_cast<int>(midiEvent.getTimeStamp());
-        renderFM(block, modBlock, currentSample, midiEventSample);
-        currentSample = midiEventSample;
-        handleMidiEvent(midiEvent);
-    }
-    renderFM(block, modBlock, currentSample, block.getNumSamples());
-}
-
-void Synth::processBlock(juce::dsp::AudioBlock<float>& block, juce::MidiBuffer& midiMessages)
-{
-    auto currentSample = 0;
-    for (const auto midiMessage : midiMessages) {
-        const auto midiEvent = midiMessage.getMessage();
-        const auto midiEventSample = static_cast<int>(midiEvent.getTimeStamp());
-        render(block, currentSample, midiEventSample);
-        currentSample = midiEventSample;
-        handleMidiEvent(midiEvent);
-    }
-    render(block, currentSample, block.getNumSamples());
-}
-
-void Synth::render(juce::dsp::AudioBlock<float>& block, int startSample, int endSample) {
-    auto* firstChannel = block.getChannelPointer(0);
-    for (auto& oscillator : oscillators) {
-        if(oscillator.isPlaying()) {
-            for (auto sample = startSample; sample < endSample; sample++) {
-                firstChannel[sample] += oscillator.getSample() * 0.2;
-            }
-        }
-    }
-    for (auto channel = 1; channel < block.getNumChannels(); channel++) {
-        std::copy(firstChannel + startSample, firstChannel + endSample, block.getChannelPointer(channel) + startSample);
-    }
-}
-*/
- 
  
 }
