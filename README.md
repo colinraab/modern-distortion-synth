@@ -4,4 +4,4 @@ The Modern Distortion Synthesizer is a polyphonic wavetable synthesizer featurin
 
 3rd place winner in the 2023 AES Saul Walker Student Design Competition.
 
-View the synth in action at on my [website](https://colinraab.com/programming) or on [YouTube](https://youtu.be/M_zJuxTO8xc)
+View the synth in action on my [website](https://colinraab.com/programming) or on [YouTube](https://youtu.be/M_zJuxTO8xc)
